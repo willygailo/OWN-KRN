@@ -85,7 +85,7 @@ Before opening a pull request against `main`:
 
 ## 🌟 Contributors
 
-View everyone who has contributed to OwnKrn on the [GitHub Contributors Graph](https://github.com/willygailo/OWN-KRN/graphs/contributors?from=2026-08-21T16%3A00%3A00.000Z):
+View everyone who has contributed to OwnKrn on the [GitHub Contributors Graph](https://github.com/willygailo/OWN-KRN/graphs/contributors):
 
 <a href="https://github.com/willygailo/OWN-KRN/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=willygailo/OWN-KRN" alt="OwnKrn Contributors" />

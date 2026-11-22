@@ -260,12 +260,12 @@ Contributions are always welcome! Read [CONTRIBUTING.md](CONTRIBUTING.md) for to
   </a>
   <br />
   <br />
-  <a href="https://github.com/willygailo/OWN-KRN/graphs/contributors?from=2026-08-21T16%3A00%3A00.000Z">
+  <a href="https://github.com/willygailo/OWN-KRN/graphs/contributors">
     <img src="https://contrib.rocks/image?repo=willygailo/OWN-KRN" alt="OwnKrn Contributors" />
   </a>
   <br />
   <br />
-  <a href="https://github.com/willygailo/OWN-KRN/graphs/contributors?from=2026-08-21T16%3A00%3A00.000Z">📊 View Full Contributors Graph</a> •
+  <a href="https://github.com/willygailo/OWN-KRN/graphs/contributors">📊 View Full Contributors Graph</a> •
   <a href="CONTRIBUTING.md">📖 Contributing Guide</a> •
   <a href="https://github.com/willygailo/OWN-KRN/issues">🐛 Report an Issue</a> •
   <a href="https://github.com/willygailo/OWN-KRN/pulls">🚀 Open a Pull Request</a>
