@@ -1,42 +1,111 @@
-# Build outputs (kernel, userspace, initrd, ISO, QEMU logs)
-build/
+# ==============================================================================
+# OwnKrn (x86_64 OS Kernel) .gitignore
+# ==============================================================================
 
-# Compiled objects, dependency files & binary images
+# Build & staging directories
+build/
+isodir/
+initrd_root/
+dist/
+out/
+
+# Compiled objects, dependency files, libraries & linker outputs
 *.o
+*.obj
 *.d
+*.dep
 *.a
+*.so
+*.ko
+*.mod
 *.elf
 *.bin
-*.iso
-*.img
 *.map
 *.sym
+*.lst
 *.out
+*.dbg
 
-# Archives generated at build time
-initrd.tar
+# Coverage & profiling
+*.gcda
+*.gcno
+*.gcov
+
+# Bootable images, initramfs archives & virtual disks (QEMU / VirtIO / ATA)
+*.iso
+*.img
+*.raw
+*.qcow
+*.qcow2
+*.vmdk
+*.vdi
+*.hdd
+initrd*.tar
 *.tar.gz
+*.tar.xz
+*.cpio
+*.cpio.gz
 
-# QEMU & GDB runtime artifacts
+# QEMU, GDB & crash/debug artifacts
 qemu.log
+gdb.txt
 *.log
+*.pcap
+*.pcapng
 .gdb_history
 core
 core.*
+*.dmp
 
-# Python bytecode (test runner)
+# C / C++ / Assembly tooling & symbol indices
+.cache/
+.clangd/
+.ccls-cache/
+compile_commands.json
+compile_flags.txt
+tags
+TAGS
+cscope.*
+GPATH
+GRTAGS
+GTAGS
+
+# Python & test runner caches
 __pycache__/
 *.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
 
-# Editor & IDE files
+# Environment & local overrides
+.env
+.env.*
+!.env.example
+*.local
+*.tmp
+*.temp
+
+# Editors & IDEs
 .vscode/
 .idea/
+*.iml
+.zed/
+.fleet/
+.cursor/
 *.swp
 *.swo
+*.swn
 *~
-.clangd/
-compile_commands.json
+*.bak
+*.orig
+*.rej
 
 # OS metadata
 .DS_Store
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
+Desktop.ini
