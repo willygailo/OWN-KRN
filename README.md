@@ -23,7 +23,8 @@
   <a href="#-memory-map">🗺️ Memory Map</a> •
   <a href="#-shell--syscalls">🐚 Shell & Syscalls</a> •
   <a href="#-quick-start">🚀 Quick Start</a> •
-  <a href="#-project-layout">📂 Layout</a>
+  <a href="#-project-layout">📂 Layout</a> •
+  <a href="#-contributing--contributors">🤝 Contributing</a>
 </p>
 
 </div>
@@ -246,6 +247,29 @@ OWN KRN/
 - [x] **Phase 5** — VFS core, writable `tmpfs`, POSIX `ustar` `initrd`, `devfs`, `procfs`, and canonical TTY
 - [x] **Phase 6** — `SYSCALL`/`SYSRET` MSR path, `copy_from/to_user` (`-EFAULT`), static ELF64 loader, `fork()` & `execve()`
 - [x] **Phase 7** — Freestanding `user/libc`, PID 1 `/bin/init`, interactive `/bin/sh`, 25/25 QEMU E2E tests & documentation
+
+---
+
+## 🤝 Contributing & Contributors
+
+Contributions are always welcome! Read [CONTRIBUTING.md](CONTRIBUTING.md) for toolchain setup, kernel invariants (`W^X`, `-EFAULT`, `swapgs`), and the PR checklist.
+
+<div align="center">
+  <a href="CONTRIBUTING.md">
+    <img src="assets/contributing-banner.jpg" alt="Contribute to OwnKrn" width="88%" />
+  </a>
+  <br />
+  <br />
+  <a href="https://github.com/willygailo/OWN-KRN/graphs/contributors?from=2026-08-21T16%3A00%3A00.000Z">
+    <img src="https://contrib.rocks/image?repo=willygailo/OWN-KRN" alt="OwnKrn Contributors" />
+  </a>
+  <br />
+  <br />
+  <a href="https://github.com/willygailo/OWN-KRN/graphs/contributors?from=2026-08-21T16%3A00%3A00.000Z">📊 View Full Contributors Graph</a> •
+  <a href="CONTRIBUTING.md">📖 Contributing Guide</a> •
+  <a href="https://github.com/willygailo/OWN-KRN/issues">🐛 Report an Issue</a> •
+  <a href="https://github.com/willygailo/OWN-KRN/pulls">🚀 Open a Pull Request</a>
+</div>
 
 ---
 
