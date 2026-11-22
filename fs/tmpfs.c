@@ -1,5 +1,6 @@
 #include <fs/vfs.h>
 #include <kernel/errno.h>
+#include <kernel/sync.h>
 #include <lib/string.h>
 #include <mm/kmalloc.h>
 
@@ -15,7 +16,8 @@ struct tmpfs_data {
     struct tmpfs_child *children;
 };
 
-static uint64_t g_next_ino = 1;
+static uint64_t             g_next_ino = 1;
+static spinlock_t           g_tmpfs_lock = SPINLOCK_INIT;
 static const struct vfs_ops tmpfs_ops;
 
 static struct vfs_node *tmpfs_alloc_node(enum vfs_type type, uint32_t mode,
@@ -27,20 +29,34 @@ static struct vfs_node *tmpfs_alloc_node(enum vfs_type type, uint32_t mode,
         kfree(d);
         return NULL;
     }
-    n->ino      = g_next_ino++;
+    n->ino      = __sync_fetch_and_add(&g_next_ino, 1);
     n->type     = type;
     n->mode     = mode;
     n->size     = 0;
-    n->refcount = 1;
+    n->refcount = 1; /* Owned by directory entry (or root mount) */
+    n->unlinked = false;
     n->ops      = &tmpfs_ops;
     n->priv     = d;
     n->parent   = parent ? parent : n;
     return n;
 }
 
+static void tmpfs_release(struct vfs_node *node) {
+    struct tmpfs_data *d = (struct tmpfs_data *)node->priv;
+    if (d) {
+        if (d->buf) {
+            kfree(d->buf);
+        }
+        kfree(d);
+    }
+    kfree(node);
+}
+
 static ssize_t tmpfs_read(struct vfs_node *node, void *buf, size_t len, size_t offset) {
+    uint64_t irq = spin_lock_irqsave(&g_tmpfs_lock);
     struct tmpfs_data *d = (struct tmpfs_data *)node->priv;
     if (offset >= node->size) {
+        spin_unlock_irqrestore(&g_tmpfs_lock, irq);
         return 0;
     }
     size_t avail = node->size - offset;
@@ -48,10 +64,12 @@ static ssize_t tmpfs_read(struct vfs_node *node, void *buf, size_t len, size_t o
         len = avail;
     }
     memcpy(buf, d->buf + offset, len);
+    spin_unlock_irqrestore(&g_tmpfs_lock, irq);
     return (ssize_t)len;
 }
 
 static ssize_t tmpfs_write(struct vfs_node *node, const void *buf, size_t len, size_t offset) {
+    uint64_t irq = spin_lock_irqsave(&g_tmpfs_lock);
     struct tmpfs_data *d = (struct tmpfs_data *)node->priv;
     size_t end = offset + len;
     if (end > d->cap) {
@@ -61,6 +79,7 @@ static ssize_t tmpfs_write(struct vfs_node *node, const void *buf, size_t len, s
         }
         uint8_t *nb = krealloc(d->buf, new_cap);
         if (!nb) {
+            spin_unlock_irqrestore(&g_tmpfs_lock, irq);
             return -ENOMEM;
         }
         if (new_cap > d->cap) {
@@ -73,26 +92,32 @@ static ssize_t tmpfs_write(struct vfs_node *node, const void *buf, size_t len, s
     if (end > node->size) {
         node->size = end;
     }
+    spin_unlock_irqrestore(&g_tmpfs_lock, irq);
     return (ssize_t)len;
 }
 
 static int tmpfs_truncate(struct vfs_node *node, size_t new_size) {
+    uint64_t irq = spin_lock_irqsave(&g_tmpfs_lock);
     struct tmpfs_data *d = (struct tmpfs_data *)node->priv;
     if (new_size < node->size && d->buf) {
         memset(d->buf + new_size, 0, node->size - new_size);
     }
     node->size = new_size;
+    spin_unlock_irqrestore(&g_tmpfs_lock, irq);
     return 0;
 }
 
 static int tmpfs_lookup(struct vfs_node *dir, const char *name, struct vfs_node **out) {
+    uint64_t irq = spin_lock_irqsave(&g_tmpfs_lock);
     struct tmpfs_data *d = (struct tmpfs_data *)dir->priv;
     for (struct tmpfs_child *c = d->children; c != NULL; c = c->next) {
         if (strcmp(c->name, name) == 0) {
             *out = c->node;
+            spin_unlock_irqrestore(&g_tmpfs_lock, irq);
             return 0;
         }
     }
+    spin_unlock_irqrestore(&g_tmpfs_lock, irq);
     return -ENOENT;
 }
 
@@ -110,6 +135,7 @@ static int tmpfs_readdir(struct vfs_node *dir, size_t index, struct vfs_dirent *
         return 1;
     }
 
+    uint64_t irq = spin_lock_irqsave(&g_tmpfs_lock);
     struct tmpfs_data *d = (struct tmpfs_data *)dir->priv;
     size_t idx = 2;
     for (struct tmpfs_child *c = d->children; c != NULL; c = c->next, idx++) {
@@ -118,28 +144,35 @@ static int tmpfs_readdir(struct vfs_node *dir, size_t index, struct vfs_dirent *
             out->type = (uint32_t)c->node->type;
             strncpy(out->name, c->name, VFS_NAME_MAX - 1);
             out->name[VFS_NAME_MAX - 1] = '\0';
+            spin_unlock_irqrestore(&g_tmpfs_lock, irq);
             return 1;
         }
     }
+    spin_unlock_irqrestore(&g_tmpfs_lock, irq);
     return 0;
 }
 
 static int tmpfs_create(struct vfs_node *dir, const char *name, enum vfs_type type,
                         uint32_t mode, struct vfs_node **out) {
+    uint64_t irq = spin_lock_irqsave(&g_tmpfs_lock);
     struct tmpfs_data *d = (struct tmpfs_data *)dir->priv;
     for (struct tmpfs_child *c = d->children; c != NULL; c = c->next) {
         if (strcmp(c->name, name) == 0) {
+            spin_unlock_irqrestore(&g_tmpfs_lock, irq);
             return -EEXIST;
         }
     }
 
     struct vfs_node *n = tmpfs_alloc_node(type, mode, dir);
-    if (!n) return -ENOMEM;
+    if (!n) {
+        spin_unlock_irqrestore(&g_tmpfs_lock, irq);
+        return -ENOMEM;
+    }
 
     struct tmpfs_child *entry = kzalloc(sizeof(*entry));
     if (!entry) {
-        kfree(n->priv);
-        kfree(n);
+        tmpfs_release(n);
+        spin_unlock_irqrestore(&g_tmpfs_lock, irq);
         return -ENOMEM;
     }
     strncpy(entry->name, name, VFS_NAME_MAX - 1);
@@ -150,10 +183,12 @@ static int tmpfs_create(struct vfs_node *dir, const char *name, enum vfs_type ty
     if (out) {
         *out = n;
     }
+    spin_unlock_irqrestore(&g_tmpfs_lock, irq);
     return 0;
 }
 
 static int tmpfs_unlink(struct vfs_node *dir, const char *name) {
+    uint64_t irq = spin_lock_irqsave(&g_tmpfs_lock);
     struct tmpfs_data *d = (struct tmpfs_data *)dir->priv;
     struct tmpfs_child **pp = &d->children;
     while (*pp) {
@@ -161,23 +196,27 @@ static int tmpfs_unlink(struct vfs_node *dir, const char *name) {
         if (strcmp(c->name, name) == 0) {
             struct vfs_node *target = c->node;
             if (target->mount_root) {
+                spin_unlock_irqrestore(&g_tmpfs_lock, irq);
                 return -EBUSY;
             }
             struct tmpfs_data *td = (struct tmpfs_data *)target->priv;
             if (target->type == VFS_DIR && td->children != NULL) {
+                spin_unlock_irqrestore(&g_tmpfs_lock, irq);
                 return -ENOTEMPTY;
             }
             *pp = c->next;
-            if (td->buf) {
-                kfree(td->buf);
-            }
-            kfree(td);
-            kfree(target);
+            target->unlinked = true;
+            spin_unlock_irqrestore(&g_tmpfs_lock, irq);
+
             kfree(c);
+            /* Drop directory link reference; if open FDs still exist, backing data
+             * stays alive until the last open FD closes (no use-after-free). */
+            vfs_node_unref(target);
             return 0;
         }
         pp = &(*pp)->next;
     }
+    spin_unlock_irqrestore(&g_tmpfs_lock, irq);
     return -ENOENT;
 }
 
@@ -189,6 +228,7 @@ static const struct vfs_ops tmpfs_ops = {
     .create   = tmpfs_create,
     .unlink   = tmpfs_unlink,
     .truncate = tmpfs_truncate,
+    .release  = tmpfs_release,
 };
 
 struct vfs_node *tmpfs_create_root(void) {

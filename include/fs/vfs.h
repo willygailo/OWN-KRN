@@ -25,6 +25,7 @@ enum vfs_type {
     VFS_FILE    = 1,
     VFS_DIR     = 2,
     VFS_CHARDEV = 3,
+    VFS_PIPE    = 4,
 };
 
 struct vfs_node;
@@ -51,6 +52,7 @@ struct vfs_ops {
                       uint32_t mode, struct vfs_node **out);
     int     (*unlink)(struct vfs_node *dir, const char *name);
     int     (*truncate)(struct vfs_node *node, size_t new_size);
+    void    (*release)(struct vfs_node *node);
 };
 
 struct vfs_node {
@@ -59,6 +61,7 @@ struct vfs_node {
     uint32_t              mode;
     size_t                size;
     uint32_t              refcount;
+    bool                  unlinked;
     const struct vfs_ops *ops;
     void                 *priv;
     struct vfs_node      *parent;
@@ -75,6 +78,8 @@ struct file_desc {
 /* Core VFS API */
 void             vfs_init(void);
 struct vfs_node *vfs_root(void);
+void             vfs_node_ref(struct vfs_node *node);
+void             vfs_node_unref(struct vfs_node *node);
 int              vfs_mount(const char *path, struct vfs_node *fs_root);
 int              vfs_normalize_path(const char *cwd, const char *path,
                                     char *out, size_t out_sz);
@@ -90,6 +95,9 @@ int              vfs_stat_node(struct vfs_node *node, struct vfs_stat *st);
 /* File-descriptor table operations */
 int              vfs_open(struct task *t, const char *path, uint32_t flags, uint32_t mode);
 int              vfs_close(struct task *t, int fd);
+int              vfs_dup(struct task *t, int oldfd);
+int              vfs_dup2(struct task *t, int oldfd, int newfd);
+int              vfs_pipe(struct task *t, int pipefd[2]);
 ssize_t          vfs_read(struct task *t, int fd, void *buf, size_t len);
 ssize_t          vfs_write(struct task *t, int fd, const void *buf, size_t len);
 off_t            vfs_lseek(struct task *t, int fd, off_t offset, int whence);
@@ -99,10 +107,11 @@ void             vfs_task_close_all(struct task *t);
 void             vfs_task_clone_fds(struct task *dst, struct task *src);
 int              vfs_setup_stdio(struct task *t);
 
-/* Filesystem constructors */
+/* Filesystem & IPC constructors */
 struct vfs_node *tmpfs_create_root(void);
 struct vfs_node *devfs_create_root(void);
 struct vfs_node *procfs_create_root(void);
+int              pipe_create_nodes(struct vfs_node **rnode_out, struct vfs_node **wnode_out);
 int              initrd_unpack(uint64_t phys_addr, uint64_t size);
 
 #endif /* OWNKRN_FS_VFS_H */

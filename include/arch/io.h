@@ -71,6 +71,29 @@ static inline void write_cr3(uint64_t v) {
     __asm__ volatile("mov %0, %%cr3" : : "r"(v) : "memory");
 }
 
+static inline uint64_t read_cr4(void) {
+    uint64_t v;
+    __asm__ volatile("mov %%cr4, %0" : "=r"(v));
+    return v;
+}
+
+static inline void write_cr4(uint64_t v) {
+    __asm__ volatile("mov %0, %%cr4" : : "r"(v) : "memory");
+}
+
+static inline void cpuid_leaf(uint32_t leaf, uint32_t subleaf,
+                              uint32_t *eax, uint32_t *ebx,
+                              uint32_t *ecx, uint32_t *edx) {
+    uint32_t a, b, c, d;
+    __asm__ volatile("cpuid"
+                     : "=a"(a), "=b"(b), "=c"(c), "=d"(d)
+                     : "a"(leaf), "c"(subleaf));
+    if (eax) *eax = a;
+    if (ebx) *ebx = b;
+    if (ecx) *ecx = c;
+    if (edx) *edx = d;
+}
+
 static inline void invlpg(uint64_t addr) {
     __asm__ volatile("invlpg (%0)" : : "r"(addr) : "memory");
 }

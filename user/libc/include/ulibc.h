@@ -23,12 +23,17 @@ int     u_stat(const char *path, struct uapi_stat *st);
 int     u_fstat(int fd, struct uapi_stat *st);
 off_t   u_lseek(int fd, off_t off, int whence);
 void   *u_sbrk(intptr_t inc);
+int     u_pipe(int pipefd[2]);
+int     u_dup(int oldfd);
+int     u_dup2(int oldfd, int newfd);
 pid_t   u_getpid(void);
 pid_t   u_getppid(void);
 pid_t   u_fork(void);
 int     u_execve(const char *path, char *const argv[]);
 void    u_exit(int code) __attribute__((noreturn));
 pid_t   u_waitpid(pid_t pid, int *status);
+pid_t   u_waitpid_opts(pid_t pid, int *status, int options);
+int     u_kill(pid_t pid, int sig);
 int     u_uname(struct utsname *u);
 int     u_getdents(int fd, struct uapi_dirent *ents, size_t max_ents);
 int     u_getcwd(char *buf, size_t size);
@@ -36,11 +41,14 @@ int     u_chdir(const char *path);
 int     u_mkdir(const char *path, uint32_t mode);
 int     u_unlink(const char *path);
 int     u_msleep(uint64_t ms);
+int     u_clock_gettime(int clk_id, struct timespec *ts);
 void    u_poweroff(void);
 void    u_reboot(void);
 
 /* Memory & string utilities */
 void   *malloc(size_t size);
+void   *calloc(size_t nmemb, size_t size);
+void   *realloc(void *ptr, size_t size);
 void    free(void *ptr);
 void   *memset(void *dst, int c, size_t n);
 void   *memcpy(void *dst, const void *src, size_t n);
@@ -51,6 +59,8 @@ int     strncmp(const char *a, const char *b, size_t n);
 char   *strcpy(char *dst, const char *src);
 char   *strncpy(char *dst, const char *src, size_t n);
 char   *strchr(const char *s, int c);
+char   *strstr(const char *haystack, const char *needle);
+int     atoi(const char *s);
 
 /* Formatted I/O */
 int     vsnprintf(char *buf, size_t cap, const char *fmt, va_list ap);

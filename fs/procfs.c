@@ -1,4 +1,5 @@
 #include <arch/pit.h>
+#include <drivers/rtc.h>
 #include <fs/vfs.h>
 #include <kernel/errno.h>
 #include <kernel/sched.h>
@@ -12,6 +13,7 @@ enum proc_kind {
     PROC_MEMINFO = 2,
     PROC_UPTIME  = 3,
     PROC_TASKS   = 4,
+    PROC_RTC     = 5,
 };
 
 struct proc_entry {
@@ -19,7 +21,7 @@ struct proc_entry {
     struct vfs_node *node;
 };
 
-static struct proc_entry g_procs[4];
+static struct proc_entry g_procs[5];
 static struct vfs_node  *g_proc_root = NULL;
 
 static const char *task_state_str(enum task_state st) {
@@ -37,7 +39,7 @@ static size_t format_proc_content(enum proc_kind kind, char *buf, size_t cap) {
     switch (kind) {
         case PROC_VERSION:
             return (size_t)snprintf(buf, cap,
-                "OwnKrn 0.1.0-x86_64 (freestanding C11 + NASM, higher-half)\n");
+                "OwnKrn 0.2.0-x86_64 (freestanding C11 + NASM, higher-half)\n");
         case PROC_MEMINFO: {
             struct pmm_stats ps;
             struct kheap_stats hs;
@@ -80,6 +82,15 @@ static size_t format_proc_content(enum proc_kind kind, char *buf, size_t cap) {
                     tbl[i].name);
             }
             return pos;
+        }
+        case PROC_RTC: {
+            struct rtc_time rt;
+            rtc_read(&rt);
+            int64_t epoch = rtc_unix_seconds();
+            return (size_t)snprintf(buf, cap,
+                "%04u-%02u-%02u %02u:%02u:%02u UTC (epoch=%lld)\n",
+                rt.year, rt.month, rt.day, rt.hour, rt.minute, rt.second,
+                (long long)epoch);
         }
         default:
             return 0;
@@ -169,6 +180,7 @@ struct vfs_node *procfs_create_root(void) {
     g_procs[1] = (struct proc_entry){ "meminfo", make_proc(2002, PROC_MEMINFO, g_proc_root) };
     g_procs[2] = (struct proc_entry){ "uptime",  make_proc(2003, PROC_UPTIME,  g_proc_root) };
     g_procs[3] = (struct proc_entry){ "tasks",   make_proc(2004, PROC_TASKS,   g_proc_root) };
+    g_procs[4] = (struct proc_entry){ "rtc",     make_proc(2005, PROC_RTC,     g_proc_root) };
 
     return g_proc_root;
 }

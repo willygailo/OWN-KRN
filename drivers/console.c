@@ -11,10 +11,21 @@ static int cursor_row = 0;
 static int cursor_col = 0;
 static uint8_t vga_attr = 0x07; /* Light grey on black */
 
-/* Minimal ANSI CSI escape parser for clear-screen (\x1b[2J) and home (\x1b[H) */
+/* ANSI CSI escape parser: clear (\x1b[2J), home (\x1b[H), SGR colors (\x1b[3xm / 9xm / 0m) */
 static int  esc_state = 0; /* 0=normal, 1=saw ESC, 2=in CSI */
-static char esc_buf[16];
+static char esc_buf[24];
 static int  esc_len = 0;
+
+static const uint8_t ansi_to_vga[8] = {
+    0x0, /* black */
+    0x4, /* red */
+    0x2, /* green */
+    0x6, /* yellow/brown */
+    0x1, /* blue */
+    0x5, /* magenta */
+    0x3, /* cyan */
+    0x7  /* light grey */
+};
 
 static uint16_t vga_entry(char c, uint8_t attr) {
     return (uint16_t)(uint8_t)c | ((uint16_t)attr << 8);
@@ -38,6 +49,33 @@ static void console_scroll(void) {
         vga_buf[(VGA_ROWS - 1) * VGA_COLS + c] = vga_entry(' ', vga_attr);
     }
     cursor_row = VGA_ROWS - 1;
+}
+
+static void apply_sgr(void) {
+    esc_buf[esc_len] = '\0';
+    int val = 0;
+    bool has_digit = false;
+    for (int i = 0; i <= esc_len; i++) {
+        char ch = esc_buf[i];
+        if (ch >= '0' && ch <= '9') {
+            val = val * 10 + (ch - '0');
+            has_digit = true;
+        } else if (ch == ';' || ch == '\0') {
+            if (!has_digit || val == 0) {
+                vga_attr = 0x07;
+            } else if (val == 1) {
+                vga_attr |= 0x08; /* Bright foreground */
+            } else if (val >= 30 && val <= 37) {
+                vga_attr = (uint8_t)((vga_attr & 0xF0) | ansi_to_vga[val - 30]);
+            } else if (val >= 90 && val <= 97) {
+                vga_attr = (uint8_t)((vga_attr & 0xF0) | ansi_to_vga[val - 90] | 0x08);
+            } else if (val >= 40 && val <= 47) {
+                vga_attr = (uint8_t)((vga_attr & 0x0F) | (ansi_to_vga[val - 40] << 4));
+            }
+            val = 0;
+            has_digit = false;
+        }
+    }
 }
 
 void console_init(void) {
@@ -83,6 +121,8 @@ void console_putc(char c) {
                 cursor_row = 0;
                 cursor_col = 0;
                 update_hw_cursor();
+            } else if (c == 'm') {
+                apply_sgr();
             }
             esc_state = 0;
             return;

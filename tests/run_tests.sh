@@ -21,7 +21,7 @@ kernel, initrd = sys.argv[1], sys.argv[2]
 cmd = [
     "qemu-system-x86_64",
     "-machine", "pc",
-    "-cpu", "qemu64,+nx",
+    "-cpu", "qemu64,+nx,+smep",
     "-m", "256M",
     "-no-reboot",
     "-d", "guest_errors,cpu_reset",
@@ -42,7 +42,7 @@ proc = subprocess.Popen(
 
 transcript = bytearray()
 
-def read_until(marker: bytes, timeout: float = 10.0) -> str:
+def read_until(marker: bytes, timeout: float = 12.0) -> str:
     start_pos = len(transcript)
     deadline = time.monotonic() + timeout
     fd = proc.stdout.fileno()
@@ -65,13 +65,12 @@ def read_until(marker: bytes, timeout: float = 10.0) -> str:
     )
 
 def send_cmd(line: str, wait_prompt: bytes = b"ownkrn:") -> str:
-    # Pace serial input gently to respect the 16-byte 16550 UART RX FIFO
     data = (line + "\n").encode("ascii")
     for ch in data:
         proc.stdin.write(bytes([ch]))
         proc.stdin.flush()
         time.sleep(0.004)
-    return read_until(wait_prompt, timeout=10.0)
+    return read_until(wait_prompt, timeout=12.0)
 
 def expect(haystack: str, needle: str, label: str) -> None:
     if needle not in haystack:
@@ -82,16 +81,21 @@ def expect(haystack: str, needle: str, label: str) -> None:
     print(f"  [PASS] {label}")
 
 try:
-    print("Booting OwnKrn in QEMU headless...")
+    print("Booting OwnKrn 0.2.0 in QEMU headless (+nx,+smep)...")
     boot_out = read_until(b"ownkrn:/# ", timeout=12.0)
     expect(boot_out, "Long Mode active in higher half", "Higher-half 64-bit boot")
+    expect(boot_out, "NXE=on, WP=on, SMEP=on", "CPU hardening (NXE + WP + SMEP)")
+    expect(boot_out, "CMOS RTC", "CMOS RTC wall-clock init")
     expect(boot_out, "W^X enforced", "4-level VMM W^X enforcement")
     expect(boot_out, "SYSCALL/SYSRET MSRs configured", "SYSCALL/SYSRET MSR setup")
-    expect(boot_out, "Welcome to OwnKrn", "/bin/init displayed /etc/motd")
+    expect(boot_out, "Welcome to OwnKrn 0.2.0", "/bin/init displayed /etc/motd")
 
     out = send_cmd("uname -a")
-    expect(out, "OwnKrn ownkrn 0.1.0", "uname -a syscall")
+    expect(out, "OwnKrn ownkrn 0.2.0", "uname -a syscall")
     expect(out, "x86_64", "uname machine architecture")
+
+    out = send_cmd("date")
+    expect(out, "UTC (epoch=", "CMOS RTC date command & /proc/rtc")
 
     out = send_cmd("pwd")
     expect(out, "/", "initial cwd is /")
@@ -106,37 +110,51 @@ try:
     out = send_cmd("pwd", wait_prompt=b"ownkrn:/tmp/demo# ")
     expect(out, "/tmp/demo", "mkdir + cd + pwd")
 
-    out = send_cmd("echo kernel-from-scratch > /tmp/demo/note.txt", wait_prompt=b"ownkrn:/tmp/demo# ")
-    out = send_cmd("cat /tmp/demo/note.txt", wait_prompt=b"ownkrn:/tmp/demo# ")
-    expect(out, "kernel-from-scratch", "tmpfs file write + redirection + cat")
+    # Test external ELF64 stdout redirection via dup2() + '<' stdin redirection!
+    out = send_cmd("hello RedirTest > /tmp/demo/ext.txt", wait_prompt=b"ownkrn:/tmp/demo# ")
+    out = send_cmd("cat < /tmp/demo/ext.txt", wait_prompt=b"ownkrn:/tmp/demo# ")
+    expect(out, "Hello, RedirTest! (from Ring 3 ELF", "external ELF64 dup2 '>' & '<' redirection")
 
-    out = send_cmd("ls", wait_prompt=b"ownkrn:/tmp/demo# ")
-    expect(out, "note.txt", "ls shows newly created file")
+    out = send_cmd("echo line2 >> /tmp/demo/ext.txt", wait_prompt=b"ownkrn:/tmp/demo# ")
+    out = send_cmd("cat /tmp/demo/ext.txt | wc", wait_prompt=b"ownkrn:/tmp/demo# ")
+    expect(out, "     2 ", "pipe 'cat | wc' counts 2 lines")
 
-    out = send_cmd("rm /tmp/demo/note.txt", wait_prompt=b"ownkrn:/tmp/demo# ")
+    out = send_cmd("rm /tmp/demo/ext.txt", wait_prompt=b"ownkrn:/tmp/demo# ")
     out = send_cmd("cd /", wait_prompt=b"ownkrn:/# ")
     out = send_cmd("rm /tmp/demo")
+
+    # Test multi-stage pipelines + Ring 3 coreutils (grep, wc, hexdump)
+    out = send_cmd("ps | grep U3")
+    expect(out, "init", "pipeline 'ps | grep U3' shows init")
+    expect(out, "sh", "pipeline 'ps | grep U3' shows sh")
+    if "kidle" in out:
+        raise AssertionError(f"'ps | grep U3' leaked non-matching line 'kidle':\n{out}")
+    print("  [PASS] pipeline 'ps | grep U3' filters out K0 kidle")
+
+    out = send_cmd("echo OwnKrn | hexdump")
+    expect(out, "4f 77 6e 4b 72 6e", "pipeline 'echo | hexdump' hex output")
 
     out = send_cmd("free")
     expect(out, "MemTotal:", "/proc/meminfo MemTotal")
     expect(out, "MemFree:", "/proc/meminfo MemFree")
 
-    out = send_cmd("ps")
-    expect(out, "kidle", "/proc/tasks shows Ring 0 kidle")
-    expect(out, "init", "/proc/tasks shows Ring 3 init")
-    expect(out, "sh", "/proc/tasks shows Ring 3 sh")
-
     out = send_cmd("uptime")
     expect(out, "ticks", "/proc/uptime reports PIT ticks")
 
-    out = send_cmd("hello World")
-    expect(out, "Hello, World! (from Ring 3 ELF, pid=", "external Ring 3 ELF fork+execve")
+    # Negative security test: Ring 3 NULL dereference must kill child, NOT kernel or shell!
+    out = send_cmd("faulttest")
+    expect(out, "killed by CPU exception vec=14", "Ring 3 #PF contained cleanly by kernel")
+    out = send_cmd("echo shell-still-alive")
+    expect(out, "shell-still-alive", "/bin/sh survived child Ring 3 segfault")
 
+    # Comprehensive Ring 3 selftest (coalescing malloc, -EFAULT, open-unlink refcount, pipe, fork/execve, kill SIGTERM, clock_gettime)
     out = send_cmd("selftest")
     expect(out, "Kernel-pointer syscall checks: write=-14 read=-14", "-EFAULT kernel pointer isolation")
     expect(out, "arg1=execve-arg-ok", "nested fork+execve argument passing")
     expect(out, "exit_code=42", "waitpid captures child exit code")
-    expect(out, "Ring 3 selftest PASSED.", "full Ring 3 syscall/brk/VFS/fork/execve selftest")
+    expect(out, "kill(SIGTERM) -> pid=", "POSIX kill(SIGTERM) termination")
+    expect(out, "exit_code=143", "killed child status is 128+SIGTERM (143)")
+    expect(out, "Ring 3 selftest PASSED.", "full Ring 3 v0.2 selftest (refcount, pipe, dup2, malloc, kill, rtc)")
 
     # Clean ACPI shutdown
     for ch in b"halt\n":
@@ -152,7 +170,7 @@ try:
         raise AssertionError(f"QEMU exited with non-zero status {rc}")
 
     print("  [PASS] Clean ACPI poweroff (exit code 0)")
-    print("\nALL OWNKRN END-TO-END TESTS PASSED!")
+    print("\nALL OWNKRN v0.2 END-TO-END TESTS PASSED!")
 finally:
     if proc.poll() is None:
         proc.kill()

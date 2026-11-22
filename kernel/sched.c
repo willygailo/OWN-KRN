@@ -1,6 +1,7 @@
 #include <arch/gdt.h>
 #include <arch/io.h>
 #include <arch/pit.h>
+#include <kernel/errno.h>
 #include <kernel/panic.h>
 #include <kernel/printk.h>
 #include <kernel/sched.h>
@@ -18,7 +19,6 @@ extern char kernel_boot_stack_top[];
 extern void switch_context(uint64_t *old_rsp, uint64_t new_rsp, uint64_t new_cr3);
 extern void kthread_trampoline(void);
 
-/* Forward hook so Phase 5/6 VFS closes open file descriptors on task_exit */
 typedef void (*task_close_fds_hook_t)(struct task *t);
 static task_close_fds_hook_t g_close_fds_hook = NULL;
 
@@ -42,12 +42,10 @@ void sched_init(void) {
     memset(g_tasks, 0, sizeof(g_tasks));
     memset(&g_cpu_local, 0, sizeof(g_cpu_local));
 
-    /* Anchor Ring 0 GS base to g_cpu_local; Ring 3 GS base starts at 0 */
     g_cpu_local.kernel_rsp = (uint64_t)(uintptr_t)kernel_boot_stack_top;
     wrmsr(MSR_GS_BASE, (uint64_t)(uintptr_t)&g_cpu_local);
     wrmsr(MSR_KERNEL_GS_BASE, 0);
 
-    /* PID 0 represents the initial boot/idle kernel task */
     struct task *t0 = &g_tasks[0];
     t0->pid         = 0;
     t0->ppid        = 0;
@@ -105,11 +103,11 @@ struct task *sched_alloc_task(const char *name, pid_t ppid, uint64_t cr3, bool i
     }
 
     memset(slot, 0, sizeof(*slot));
-    slot->pid     = g_next_pid++;
-    slot->ppid    = ppid;
-    slot->state   = TASK_BLOCKED; /* Caller transitions to TASK_READY when stack is ready */
-    slot->cr3     = cr3 ? cr3 : vmm_kernel_pml4();
-    slot->is_user = is_user;
+    slot->pid       = g_next_pid++;
+    slot->ppid      = ppid;
+    slot->state     = TASK_BLOCKED;
+    slot->cr3       = cr3 ? cr3 : vmm_kernel_pml4();
+    slot->is_user   = is_user;
     slot->slice_rem = SCHED_QUANTUM_TICKS;
     strncpy(slot->name, name ? name : "task", sizeof(slot->name) - 1);
     strcpy(slot->cwd, "/");
@@ -128,6 +126,15 @@ struct task *sched_alloc_task(const char *name, pid_t ppid, uint64_t cr3, bool i
     return slot;
 }
 
+void sched_make_ready(struct task *t) {
+    if (!t) return;
+    uint64_t flags = spin_lock_irqsave(&g_sched_lock);
+    if (t->state != TASK_UNUSED && t->state != TASK_ZOMBIE) {
+        t->state = TASK_READY;
+    }
+    spin_unlock_irqrestore(&g_sched_lock, flags);
+}
+
 pid_t kthread_create(const char *name, kthread_fn_t fn, void *arg) {
     struct task *t = sched_alloc_task(name, g_current ? g_current->pid : 0,
                                       vmm_kernel_pml4(), false);
@@ -135,20 +142,17 @@ pid_t kthread_create(const char *name, kthread_fn_t fn, void *arg) {
         return -1;
     }
 
-    /* Lay out initial switch_context return frame on the new kernel stack */
     uint64_t *sp = (uint64_t *)(uintptr_t)t->kstack_top;
-    *--sp = (uint64_t)(uintptr_t)kthread_trampoline; /* RET target */
-    *--sp = 0;                                       /* rbp */
-    *--sp = 0;                                       /* rbx */
-    *--sp = (uint64_t)(uintptr_t)fn;                 /* r12 */
-    *--sp = (uint64_t)(uintptr_t)arg;                /* r13 */
-    *--sp = 0;                                       /* r14 */
-    *--sp = 0;                                       /* r15 */
+    *--sp = (uint64_t)(uintptr_t)kthread_trampoline;
+    *--sp = 0; /* rbp */
+    *--sp = 0; /* rbx */
+    *--sp = (uint64_t)(uintptr_t)fn;  /* r12 */
+    *--sp = (uint64_t)(uintptr_t)arg; /* r13 */
+    *--sp = 0; /* r14 */
+    *--sp = 0; /* r15 */
     t->rsp = (uint64_t)(uintptr_t)sp;
 
-    uint64_t flags = spin_lock_irqsave(&g_sched_lock);
-    t->state = TASK_READY;
-    spin_unlock_irqrestore(&g_sched_lock, flags);
+    sched_make_ready(t);
     return t->pid;
 }
 
@@ -159,14 +163,14 @@ void sched_post_switch(void) {
 
 static void wake_sleepers_unlocked(uint64_t now) {
     for (size_t i = 0; i < MAX_TASKS; i++) {
-        if (g_tasks[i].state == TASK_SLEEPING && now >= g_tasks[i].wake_tick) {
+        if (g_tasks[i].state == TASK_SLEEPING &&
+            (now >= g_tasks[i].wake_tick || g_tasks[i].pending_sigs != 0)) {
             g_tasks[i].state = TASK_READY;
         }
     }
 }
 
 static struct task *pick_next_unlocked(void) {
-    /* Prefer runnable non-idle tasks (1..MAX_TASKS-1) in round-robin order */
     for (size_t step = 1; step <= MAX_TASKS - 1; step++) {
         size_t idx = ((g_rr_cursor + step - 1) % (MAX_TASKS - 1)) + 1;
         if (g_tasks[idx].state == TASK_READY) {
@@ -174,11 +178,9 @@ static struct task *pick_next_unlocked(void) {
             return &g_tasks[idx];
         }
     }
-    /* If current non-idle task is still READY, keep running it */
     if (g_current && g_current->pid != 0 && g_current->state == TASK_READY) {
         return g_current;
     }
-    /* Fall back to PID 0 (kidle) */
     if (g_tasks[0].state == TASK_READY || g_tasks[0].state == TASK_RUNNING) {
         return &g_tasks[0];
     }
@@ -232,9 +234,11 @@ void sleep_ms(uint64_t ms) {
     }
 
     uint64_t flags = spin_lock_irqsave(&g_sched_lock);
-    g_current->wake_tick = target;
-    g_current->state = TASK_SLEEPING;
-    schedule_unlocked();
+    if (g_current->pending_sigs == 0) {
+        g_current->wake_tick = target;
+        g_current->state = TASK_SLEEPING;
+        schedule_unlocked();
+    }
     spin_unlock_irqrestore(&g_sched_lock, flags);
 }
 
@@ -242,7 +246,6 @@ void sched_tick(void) {
     if (!g_sched_ready || !g_current) {
         return;
     }
-    /* Never recurse into scheduler if lock is already held */
     if (g_sched_lock.locked) {
         return;
     }
@@ -280,13 +283,20 @@ NORETURN void task_exit(int code) {
     cur->exit_code = code;
     cur->state = TASK_ZOMBIE;
 
-    /* Reparent any children to PID 1 (init) or PID 0 */
+    /* Reparent any children (including zombies) to PID 1 (init) or PID 0 */
+    bool wake_init = false;
     for (size_t i = 1; i < MAX_TASKS; i++) {
         if (g_tasks[i].state != TASK_UNUSED && g_tasks[i].ppid == cur->pid) {
             g_tasks[i].ppid = (cur->pid == 1) ? 0 : 1;
+            if (g_tasks[i].state == TASK_ZOMBIE && g_tasks[i].ppid == 1) {
+                wake_init = true;
+            }
         }
     }
     sched_wake_parent(cur->ppid);
+    if (wake_init) {
+        sched_wake_parent(1);
+    }
 
     schedule_unlocked();
     spin_unlock_irqrestore(&g_sched_lock, flags);
@@ -294,7 +304,7 @@ NORETURN void task_exit(int code) {
     kpanic("task_exit returned unexpectedly for pid=%d", cur->pid);
 }
 
-int sched_waitpid(pid_t target_pid, int *status_out) {
+int sched_waitpid(pid_t target_pid, int *status_out, int options) {
     struct task *cur = g_current;
 
     for (;;) {
@@ -316,13 +326,13 @@ int sched_waitpid(pid_t target_pid, int *status_out) {
         }
 
         if (zombie) {
-            pid_t zpid = zombie->pid;
-            int zcode  = zombie->exit_code;
+            pid_t zpid    = zombie->pid;
+            int   zcode   = zombie->exit_code;
             uint64_t zcr3 = zombie->cr3;
             void *zkstack = zombie->kstack_base;
-            bool zuser = zombie->is_user;
+            bool  zuser   = zombie->is_user;
 
-            zombie->state = TASK_UNUSED;
+            zombie->state       = TASK_UNUSED;
             zombie->kstack_base = NULL;
             spin_unlock_irqrestore(&g_sched_lock, flags);
 
@@ -340,11 +350,20 @@ int sched_waitpid(pid_t target_pid, int *status_out) {
 
         if (!has_matching_child) {
             spin_unlock_irqrestore(&g_sched_lock, flags);
-            return -10; /* -ECHILD */
+            return -ECHILD;
+        }
+
+        if (options & WNOHANG) {
+            spin_unlock_irqrestore(&g_sched_lock, flags);
+            return 0;
+        }
+
+        if (cur->pending_sigs != 0) {
+            spin_unlock_irqrestore(&g_sched_lock, flags);
+            return -EINTR;
         }
 
         if (cur->pid == 0) {
-            /* Boot/idle task cannot enter BLOCKED; spin with HLT */
             spin_unlock_irqrestore(&g_sched_lock, flags);
             irq_enable();
             cpu_halt();
@@ -353,6 +372,74 @@ int sched_waitpid(pid_t target_pid, int *status_out) {
             cur->state = TASK_BLOCKED;
             schedule_unlocked();
             spin_unlock_irqrestore(&g_sched_lock, flags);
+        }
+    }
+}
+
+int sched_send_signal(pid_t pid, int sig) {
+    if (sig <= 0 || sig >= 32) {
+        return -EINVAL;
+    }
+    if (pid <= 1) {
+        return -EPERM; /* Protect kidle (0) and init (1) */
+    }
+
+    uint64_t flags = spin_lock_irqsave(&g_sched_lock);
+    struct task *target = NULL;
+    for (size_t i = 1; i < MAX_TASKS; i++) {
+        if (g_tasks[i].state != TASK_UNUSED && g_tasks[i].pid == pid) {
+            target = &g_tasks[i];
+            break;
+        }
+    }
+    if (!target || target->state == TASK_ZOMBIE) {
+        spin_unlock_irqrestore(&g_sched_lock, flags);
+        return -ESRCH;
+    }
+
+    target->pending_sigs |= (1U << (uint32_t)sig);
+    if (target->state == TASK_SLEEPING || target->state == TASK_BLOCKED) {
+        target->state = TASK_READY;
+    }
+    spin_unlock_irqrestore(&g_sched_lock, flags);
+    return 0;
+}
+
+void sched_signal_foreground(int sig) {
+    if (sig <= 0 || sig >= 32) return;
+    uint64_t flags = spin_lock_irqsave(&g_sched_lock);
+    /* Deliver Ctrl+C to the highest-PID active user child above init & sh (pid > 2) */
+    struct task *victim = NULL;
+    for (size_t i = 1; i < MAX_TASKS; i++) {
+        struct task *t = &g_tasks[i];
+        if (!t->is_user || t->state == TASK_UNUSED || t->state == TASK_ZOMBIE) continue;
+        if (t->pid <= 2) continue; /* Keep init (1) and shell (2) alive on Ctrl+C */
+        if (!victim || t->pid > victim->pid) {
+            victim = t;
+        }
+    }
+    if (victim) {
+        victim->pending_sigs |= (1U << (uint32_t)sig);
+        if (victim->state == TASK_SLEEPING || victim->state == TASK_BLOCKED) {
+            victim->state = TASK_READY;
+        }
+    }
+    spin_unlock_irqrestore(&g_sched_lock, flags);
+}
+
+void sched_check_signals(void) {
+    struct task *cur = g_current;
+    if (!cur || !cur->is_user || cur->pending_sigs == 0) {
+        return;
+    }
+    uint32_t sigs = cur->pending_sigs;
+    cur->pending_sigs = 0;
+
+    for (int s = 1; s < 32; s++) {
+        if (sigs & (1U << (uint32_t)s)) {
+            if (s == SIGKILL || s == SIGTERM || s == SIGINT || s == SIGPIPE) {
+                task_exit(128 + s);
+            }
         }
     }
 }

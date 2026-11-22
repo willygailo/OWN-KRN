@@ -2,18 +2,43 @@
 #include <kernel/errno.h>
 #include <kernel/panic.h>
 #include <kernel/printk.h>
+#include <kernel/sync.h>
 #include <lib/string.h>
 #include <mm/kmalloc.h>
 
 extern void sched_set_close_fds_hook(void (*hook)(struct task *t));
 
 static struct vfs_node *g_root = NULL;
+static spinlock_t       g_vfs_ref_lock = SPINLOCK_INIT;
+
+void vfs_node_ref(struct vfs_node *node) {
+    if (!node) return;
+    uint64_t flags = spin_lock_irqsave(&g_vfs_ref_lock);
+    node->refcount++;
+    spin_unlock_irqrestore(&g_vfs_ref_lock, flags);
+}
+
+void vfs_node_unref(struct vfs_node *node) {
+    if (!node) return;
+    uint64_t flags = spin_lock_irqsave(&g_vfs_ref_lock);
+    bool should_release = false;
+    if (node->refcount > 0) {
+        node->refcount--;
+        if (node->refcount == 0) {
+            should_release = true;
+        }
+    }
+    spin_unlock_irqrestore(&g_vfs_ref_lock, flags);
+
+    if (should_release && node->ops && node->ops->release) {
+        node->ops->release(node);
+    }
+}
 
 void vfs_init(void) {
     g_root = tmpfs_create_root();
     KASSERT(g_root != NULL);
 
-    /* Create standard Linux mountpoints */
     KASSERT(vfs_mkdir("/", "/dev", 0755) == 0);
     KASSERT(vfs_mkdir("/", "/proc", 0755) == 0);
     KASSERT(vfs_mkdir("/", "/tmp", 0777) == 0);
@@ -72,10 +97,7 @@ int vfs_normalize_path(const char *cwd, const char *path, char *out, size_t out_
             if (depth > 0) depth--;
             continue;
         }
-        if (len >= VFS_NAME_MAX) {
-            return -ENAMETOOLONG;
-        }
-        if (depth >= ARRAY_SIZE(parts)) {
+        if (len >= VFS_NAME_MAX || depth >= ARRAY_SIZE(parts)) {
             return -ENAMETOOLONG;
         }
         parts[depth] = start;
@@ -273,6 +295,7 @@ int vfs_open(struct task *t, const char *path, uint32_t flags, uint32_t mode) {
     struct file_desc *f = kzalloc(sizeof(*f));
     if (!f) return -ENOMEM;
 
+    vfs_node_ref(node);
     f->node     = node;
     f->offset   = (flags & O_APPEND) ? node->size : 0;
     f->flags    = flags;
@@ -280,6 +303,7 @@ int vfs_open(struct task *t, const char *path, uint32_t flags, uint32_t mode) {
 
     int fd = alloc_fd(t, f);
     if (fd < 0) {
+        vfs_node_unref(node);
         kfree(f);
         return fd;
     }
@@ -290,9 +314,89 @@ int vfs_close(struct task *t, int fd) {
     struct file_desc *f = get_fd(t, fd);
     if (!f) return -EBADF;
     t->fds[fd] = NULL;
-    if (--f->refcount == 0) {
+
+    uint64_t irq = spin_lock_irqsave(&g_vfs_ref_lock);
+    bool drop = false;
+    if (f->refcount > 0) {
+        f->refcount--;
+        if (f->refcount == 0) {
+            drop = true;
+        }
+    }
+    spin_unlock_irqrestore(&g_vfs_ref_lock, irq);
+
+    if (drop) {
+        vfs_node_unref(f->node);
         kfree(f);
     }
+    return 0;
+}
+
+int vfs_dup(struct task *t, int oldfd) {
+    struct file_desc *f = get_fd(t, oldfd);
+    if (!f) return -EBADF;
+
+    int newfd = alloc_fd(t, f);
+    if (newfd < 0) return newfd;
+
+    uint64_t irq = spin_lock_irqsave(&g_vfs_ref_lock);
+    f->refcount++;
+    spin_unlock_irqrestore(&g_vfs_ref_lock, irq);
+    return newfd;
+}
+
+int vfs_dup2(struct task *t, int oldfd, int newfd) {
+    struct file_desc *f = get_fd(t, oldfd);
+    if (!f) return -EBADF;
+    if (newfd < 0 || newfd >= TASK_MAX_FDS) return -EBADF;
+    if (oldfd == newfd) return newfd;
+
+    if (t->fds[newfd]) {
+        vfs_close(t, newfd);
+    }
+    t->fds[newfd] = f;
+    uint64_t irq = spin_lock_irqsave(&g_vfs_ref_lock);
+    f->refcount++;
+    spin_unlock_irqrestore(&g_vfs_ref_lock, irq);
+    return newfd;
+}
+
+int vfs_pipe(struct task *t, int pipefd[2]) {
+    if (!t || !pipefd) return -EINVAL;
+
+    struct vfs_node *rnode = NULL, *wnode = NULL;
+    int rc = pipe_create_nodes(&rnode, &wnode);
+    if (rc < 0) return rc;
+
+    struct file_desc *rf = kzalloc(sizeof(*rf));
+    struct file_desc *wf = kzalloc(sizeof(*wf));
+    if (!rf || !wf) {
+        kfree(rf);
+        kfree(wf);
+        vfs_node_unref(rnode);
+        vfs_node_unref(wnode);
+        return -ENOMEM;
+    }
+
+    rf->node = rnode; rf->flags = O_RDONLY; rf->refcount = 1;
+    wf->node = wnode; wf->flags = O_WRONLY; wf->refcount = 1;
+
+    int rfd = alloc_fd(t, rf);
+    if (rfd < 0) {
+        kfree(rf); kfree(wf);
+        vfs_node_unref(rnode); vfs_node_unref(wnode);
+        return rfd;
+    }
+    int wfd = alloc_fd(t, wf);
+    if (wfd < 0) {
+        t->fds[rfd] = NULL;
+        kfree(rf); kfree(wf);
+        vfs_node_unref(rnode); vfs_node_unref(wnode);
+        return wfd;
+    }
+
+    pipefd[0] = rfd;
+    pipefd[1] = wfd;
     return 0;
 }
 
@@ -330,7 +434,7 @@ ssize_t vfs_write(struct task *t, int fd, const void *buf, size_t len) {
 off_t vfs_lseek(struct task *t, int fd, off_t offset, int whence) {
     struct file_desc *f = get_fd(t, fd);
     if (!f || !f->node) return -EBADF;
-    if (f->node->type == VFS_CHARDEV) return -ESPIPE;
+    if (f->node->type == VFS_CHARDEV || f->node->type == VFS_PIPE) return -ESPIPE;
 
     int64_t next;
     if (whence == SEEK_SET) {
@@ -363,7 +467,7 @@ int vfs_getdents(struct task *t, int fd, struct vfs_dirent *entries, size_t max_
     while (count < max_entries) {
         int rc = f->node->ops->readdir(f->node, f->offset, &entries[count]);
         if (rc == 0) {
-            break; /* End of directory */
+            break;
         }
         if (rc < 0) {
             return (count > 0) ? (int)count : rc;
@@ -384,6 +488,7 @@ void vfs_task_close_all(struct task *t) {
 }
 
 void vfs_task_clone_fds(struct task *dst, struct task *src) {
+    uint64_t irq = spin_lock_irqsave(&g_vfs_ref_lock);
     for (int i = 0; i < TASK_MAX_FDS; i++) {
         if (src->fds[i]) {
             dst->fds[i] = src->fds[i];
@@ -392,6 +497,7 @@ void vfs_task_clone_fds(struct task *dst, struct task *src) {
             dst->fds[i] = NULL;
         }
     }
+    spin_unlock_irqrestore(&g_vfs_ref_lock, irq);
 }
 
 int vfs_setup_stdio(struct task *t) {

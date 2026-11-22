@@ -54,18 +54,23 @@ Uses Linux x86_64 calling convention (`RAX` = number; `RDI, RSI, RDX, R10, R8, R
 | 5 | `fstat` | Stat open file descriptor |
 | 8 | `lseek` | Reposition file offset |
 | 12 | `brk` | Grow/shrink user heap |
+| 22 | `pipe` | Create unidirectional kernel ring-buffer pipe (`pipefd[2]`) |
 | 24 | `sched_yield` | Voluntarily yield CPU |
+| 32 | `dup` | Duplicate file descriptor to lowest free slot |
+| 33 | `dup2` | Duplicate file descriptor onto specific slot |
 | 35 | `nanosleep` | Sleep for `struct timespec` |
 | 39 | `getpid` | Get current process ID |
 | 57 | `fork` | Clone process address space, FDs, and register frame |
 | 59 | `execve` | Replace address space with static ELF64 binary + `argv` |
 | 60 | `exit` | Terminate process with exit status |
-| 61 | `wait4` | Wait for and reap zombie child process |
+| 61 | `wait4` | Wait for and reap zombie child process (`WNOHANG` supported) |
+| 62 | `kill` | Deliver POSIX signal (`SIGINT`, `SIGTERM`, `SIGKILL`, `SIGPIPE`) |
 | 63 | `uname` | Return `struct utsname` kernel identification |
 | 78 | `getdents` | Read directory entries (`struct uapi_dirent`) |
 | 79 | `getcwd` | Get current working directory |
 | 80 | `chdir` | Change working directory |
 | 83 | `mkdir` | Create directory |
-| 87 | `unlink` | Remove file or empty directory |
+| 87 | `unlink` | Remove directory entry (refcounted inode cleanup) |
 | 110 | `getppid` | Get parent process ID |
 | 169 | `reboot` | ACPI poweroff or 8042 CPU reset |
+| 228 | `clock_gettime` | Query `CLOCK_REALTIME` (CMOS RTC) or `CLOCK_MONOTONIC` (PIT) |

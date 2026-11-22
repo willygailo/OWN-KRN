@@ -230,7 +230,7 @@ boot_gdt64_ptr:
     dw boot_gdt64_end - boot_gdt64 - 1
     dq boot_gdt64
 
-section .boot.bss alloc noexec nobits align=4096
+section .boot.bss alloc write noexec nobits align=4096
 global boot_pml4
 boot_pml4:      resb 4096
 boot_pdpt_low:  resb 4096

@@ -1,0 +1,61 @@
+name: OwnKrn CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install kernel toolchain & QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc binutils nasm make tar python3 \
+            qemu-system-x86 grub-pc-bin grub-common xorriso mtools
+
+      - name: Verify toolchain
+        run: make check-tools
+
+      - name: Clean build kernel, userspace ELF64 & initrd
+        run: make clean && make
+
+      - name: Run automated QEMU PVH end-to-end test suite
+        run: make test
+
+      - name: Build & smoke-test GRUB2 Multiboot2 ISO
+        run: |
+          make iso
+          python3 - <<'PY'
+          import os, select, subprocess, time
+          cmd = [
+              "qemu-system-x86_64", "-machine", "pc", "-cpu", "qemu64,+nx,+smep",
+              "-m", "256M", "-no-reboot", "-cdrom", "build/kernel.iso",
+              "-display", "none", "-serial", "stdio"
+          ]
+          p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, bufsize=0)
+          buf = bytearray()
+          dl = time.monotonic() + 20.0
+          fd = p.stdout.fileno()
+          while time.monotonic() < dl:
+              if select.select([fd], [], [], 0.1)[0]:
+                  c = os.read(fd, 4096)
+                  if not c: break
+                  buf.extend(c)
+                  if b"ownkrn:/# " in buf:
+                      break
+          out = buf.decode("utf-8", errors="replace")
+          for ch in b"halt\n":
+              p.stdin.write(bytes([ch])); p.stdin.flush(); time.sleep(0.005)
+          p.wait(timeout=8)
+          assert "Boot protocol : Multiboot2" in out, f"Multiboot2 boot failed:\n{out}"
+          assert "Welcome to OwnKrn" in out, f"Init banner missing:\n{out}"
+          print("GRUB2 Multiboot2 ISO boot smoke-test PASSED!")
+          PY

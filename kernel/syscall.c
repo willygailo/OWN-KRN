@@ -1,6 +1,8 @@
 #include <arch/gdt.h>
 #include <arch/idt.h>
 #include <arch/io.h>
+#include <arch/pit.h>
+#include <drivers/rtc.h>
 #include <fs/vfs.h>
 #include <kernel/elf.h>
 #include <kernel/errno.h>
@@ -106,12 +108,11 @@ void syscall_init(void) {
     uint64_t efer = rdmsr(MSR_EFER);
     wrmsr(MSR_EFER, efer | EFER_SCE);
 
-    /* STAR[47:32] = 0x08 (Kernel CS), STAR[63:48] = 0x10 (User base: SS=0x1B, CS=0x23) */
     uint64_t star = ((uint64_t)GDT_KERNEL_DATA << 48) |
                     ((uint64_t)GDT_KERNEL_CODE << 32);
     wrmsr(MSR_STAR, star);
     wrmsr(MSR_LSTAR, (uint64_t)(uintptr_t)syscall_entry);
-    wrmsr(MSR_FMASK, 0x700ULL); /* Mask IF, TF, DF on syscall entry */
+    wrmsr(MSR_FMASK, 0x700ULL);
 
     idt_set_user_fault_hook(handle_user_fault);
     pr_ok("SYSCALL/SYSRET MSRs configured (LSTAR=0x%016llx, STAR=0x%016llx)\n",
@@ -160,6 +161,19 @@ static int64_t sys_open(uint64_t upath, uint32_t flags, uint32_t mode) {
     int rc = copy_str_from_user(path, upath, sizeof(path));
     if (rc < 0) return rc;
     return vfs_open(sched_current(), path, flags, mode);
+}
+
+static int64_t sys_pipe(uint64_t upipefd) {
+    int fds[2];
+    int rc = vfs_pipe(sched_current(), fds);
+    if (rc < 0) return rc;
+    rc = copy_to_user(upipefd, fds, sizeof(fds));
+    if (rc < 0) {
+        vfs_close(sched_current(), fds[0]);
+        vfs_close(sched_current(), fds[1]);
+        return rc;
+    }
+    return 0;
 }
 
 static int64_t sys_stat(uint64_t upath, uint64_t ustat) {
@@ -234,27 +248,22 @@ static int64_t sys_fork(struct interrupt_frame *parent_frame) {
     strcpy(child->cwd, parent->cwd);
     vfs_task_clone_fds(child, parent);
 
-    /* Copy parent's syscall interrupt_frame onto top of child's kernel stack */
     uint8_t *cframe_dst = (uint8_t *)(uintptr_t)(child->kstack_top - sizeof(struct interrupt_frame));
     memcpy(cframe_dst, parent_frame, sizeof(struct interrupt_frame));
     struct interrupt_frame *cf = (struct interrupt_frame *)cframe_dst;
-    cf->rax = 0; /* fork() returns 0 in child */
+    cf->rax = 0;
 
-    /* Push switch_context return frame below the interrupt_frame */
     uint64_t *sp = (uint64_t *)cframe_dst;
-    *--sp = (uint64_t)(uintptr_t)fork_child_trampoline; /* RET target */
-    *--sp = 0; /* rbp */
-    *--sp = 0; /* rbx */
-    *--sp = 0; /* r12 */
-    *--sp = 0; /* r13 */
-    *--sp = 0; /* r14 */
-    *--sp = 0; /* r15 */
+    *--sp = (uint64_t)(uintptr_t)fork_child_trampoline;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = 0;
     child->rsp = (uint64_t)(uintptr_t)sp;
 
-    uint64_t flags = irq_save();
-    child->state = TASK_READY;
-    irq_restore(flags);
-
+    sched_make_ready(child);
     return (int64_t)child->pid;
 }
 
@@ -263,7 +272,6 @@ static int64_t sys_execve(struct interrupt_frame *frame, uint64_t upath, uint64_
     int rc = copy_str_from_user(path, upath, sizeof(path));
     if (rc < 0) return rc;
 
-    /* Copy argv strings into kernel heap before destroying old address space */
     char *kargv[32];
     int argc = 0;
     if (uargv != 0) {
@@ -320,7 +328,6 @@ static int64_t sys_execve(struct interrupt_frame *frame, uint64_t upath, uint64_
     kfree(img);
     if (rc < 0) goto cleanup_argv;
 
-    /* Commit to new address space and destroy old one */
     uint64_t old_cr3 = cur->cr3;
     irq_disable();
     cur->cr3            = res.cr3;
@@ -337,7 +344,6 @@ static int64_t sys_execve(struct interrupt_frame *frame, uint64_t upath, uint64_
         vmm_destroy_address_space(old_cr3);
     }
 
-    /* Reprogram syscall return frame so SYSRETQ enters the new ELF entry */
     memset(frame, 0, sizeof(*frame));
     frame->rip    = res.entry;
     frame->rsp    = res.user_rsp;
@@ -353,12 +359,12 @@ cleanup_argv:
     return rc;
 }
 
-static int64_t sys_wait4(pid_t pid, uint64_t ustatus) {
+static int64_t sys_wait4(pid_t pid, uint64_t ustatus, int options) {
     int st = 0;
-    int r = sched_waitpid(pid, &st);
-    if (r < 0) return r;
+    int r = sched_waitpid(pid, &st, options);
+    if (r <= 0) return r;
     if (ustatus != 0) {
-        int packed = (st & 0xFF) << 8; /* POSIX WEXITSTATUS layout */
+        int packed = (st & 0xFF) << 8;
         int rc = copy_to_user(ustatus, &packed, sizeof(packed));
         if (rc < 0) return rc;
     }
@@ -370,7 +376,7 @@ static int64_t sys_uname(uint64_t ubuf) {
     memset(&u, 0, sizeof(u));
     strcpy(u.sysname,  "OwnKrn");
     strcpy(u.nodename, "ownkrn");
-    strcpy(u.release,  "0.1.0");
+    strcpy(u.release,  "0.2.0");
     strcpy(u.version,  "#1 SMP PREEMPT x86_64");
     strcpy(u.machine,  "x86_64");
     return copy_to_user(ubuf, &u, sizeof(u));
@@ -451,44 +457,68 @@ static int64_t sys_nanosleep(uint64_t utsp) {
     return 0;
 }
 
+static int64_t sys_clock_gettime(int clk_id, uint64_t utsp) {
+    struct timespec ts;
+    if (clk_id == CLOCK_REALTIME) {
+        ts.tv_sec  = rtc_unix_seconds();
+        ts.tv_nsec = 0;
+    } else if (clk_id == CLOCK_MONOTONIC) {
+        uint64_t ms = pit_uptime_ms();
+        ts.tv_sec  = (int64_t)(ms / 1000ULL);
+        ts.tv_nsec = (int64_t)((ms % 1000ULL) * 1000000ULL);
+    } else {
+        return -EINVAL;
+    }
+    return copy_to_user(utsp, &ts, sizeof(ts));
+}
+
 int64_t syscall_dispatch(struct interrupt_frame *f) {
     uint64_t nr = f->rax;
     uint64_t a1 = f->rdi;
     uint64_t a2 = f->rsi;
     uint64_t a3 = f->rdx;
-    uint64_t a4 = f->r10;
-    (void)a4;
 
+    int64_t ret;
     switch (nr) {
-        case SYS_read:        return sys_read((int)a1, a2, (size_t)a3);
-        case SYS_write:       return sys_write((int)a1, a2, (size_t)a3);
-        case SYS_open:        return sys_open(a1, (uint32_t)a2, (uint32_t)a3);
-        case SYS_close:       return vfs_close(sched_current(), (int)a1);
-        case SYS_stat:        return sys_stat(a1, a2);
-        case SYS_fstat:       return sys_fstat((int)a1, a2);
-        case SYS_lseek:       return vfs_lseek(sched_current(), (int)a1, (off_t)a2, (int)a3);
-        case SYS_brk:         return sys_brk(a1);
-        case SYS_sched_yield: sched_yield(); return 0;
-        case SYS_nanosleep:   return sys_nanosleep(a1);
-        case SYS_getpid:      return (int64_t)sched_current()->pid;
-        case SYS_getppid:     return (int64_t)sched_current()->ppid;
-        case SYS_fork:        return sys_fork(f);
-        case SYS_execve:      return sys_execve(f, a1, a2);
-        case SYS_exit:        task_exit((int)a1);
-        case SYS_wait4:       return sys_wait4((pid_t)a1, a2);
-        case SYS_uname:       return sys_uname(a1);
-        case SYS_getdents:    return sys_getdents((int)a1, a2, (size_t)a3);
-        case SYS_getcwd:      return sys_getcwd(a1, (size_t)a2);
-        case SYS_chdir:       return sys_chdir(a1);
-        case SYS_mkdir:       return sys_mkdir(a1, (uint32_t)a2);
-        case SYS_unlink:      return sys_unlink(a1);
+        case SYS_read:          ret = sys_read((int)a1, a2, (size_t)a3); break;
+        case SYS_write:         ret = sys_write((int)a1, a2, (size_t)a3); break;
+        case SYS_open:          ret = sys_open(a1, (uint32_t)a2, (uint32_t)a3); break;
+        case SYS_close:         ret = vfs_close(sched_current(), (int)a1); break;
+        case SYS_stat:          ret = sys_stat(a1, a2); break;
+        case SYS_fstat:         ret = sys_fstat((int)a1, a2); break;
+        case SYS_lseek:         ret = vfs_lseek(sched_current(), (int)a1, (off_t)a2, (int)a3); break;
+        case SYS_brk:           ret = sys_brk(a1); break;
+        case SYS_pipe:          ret = sys_pipe(a1); break;
+        case SYS_sched_yield:   sched_yield(); ret = 0; break;
+        case SYS_dup:           ret = vfs_dup(sched_current(), (int)a1); break;
+        case SYS_dup2:          ret = vfs_dup2(sched_current(), (int)a1, (int)a2); break;
+        case SYS_nanosleep:     ret = sys_nanosleep(a1); break;
+        case SYS_getpid:        ret = (int64_t)sched_current()->pid; break;
+        case SYS_getppid:       ret = (int64_t)sched_current()->ppid; break;
+        case SYS_fork:          ret = sys_fork(f); break;
+        case SYS_execve:        ret = sys_execve(f, a1, a2); break;
+        case SYS_exit:          task_exit((int)a1);
+        case SYS_wait4:         ret = sys_wait4((pid_t)a1, a2, (int)a3); break;
+        case SYS_kill:          ret = sched_send_signal((pid_t)a1, (int)a2); break;
+        case SYS_uname:         ret = sys_uname(a1); break;
+        case SYS_getdents:      ret = sys_getdents((int)a1, a2, (size_t)a3); break;
+        case SYS_getcwd:        ret = sys_getcwd(a1, (size_t)a2); break;
+        case SYS_chdir:         ret = sys_chdir(a1); break;
+        case SYS_mkdir:         ret = sys_mkdir(a1, (uint32_t)a2); break;
+        case SYS_unlink:        ret = sys_unlink(a1); break;
+        case SYS_clock_gettime: ret = sys_clock_gettime((int)a1, a2); break;
         case SYS_reboot:
             if (a1 == OWNKRN_CMD_REBOOT) {
                 arch_reboot();
             }
             arch_poweroff();
-            return 0;
+            ret = 0;
+            break;
         default:
-            return -ENOSYS;
+            ret = -ENOSYS;
+            break;
     }
+
+    sched_check_signals();
+    return ret;
 }

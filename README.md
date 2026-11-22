@@ -4,7 +4,7 @@
 
 <br />
 
-# ⚡ OwnKrn `0.1.0-x86_64`
+# ⚡ OwnKrn `0.2.0-x86_64`
 
 **A freestanding, higher-half, Linux-inspired 64-bit operating system kernel built completely from scratch in C11 & x86_64 NASM Assembly.**
 
@@ -12,8 +12,8 @@
   <img src="https://img.shields.io/badge/Arch-x86__64%20Long%20Mode-0ea5e9?style=for-the-badge&logo=intel&logoColor=white" alt="x86_64" />
   <img src="https://img.shields.io/badge/Language-C11%20%2B%20NASM-10b981?style=for-the-badge&logo=c&logoColor=white" alt="C11 + NASM" />
   <img src="https://img.shields.io/badge/Boot-Multiboot2%20%7C%20PVH-8b5cf6?style=for-the-badge&logo=linux&logoColor=white" alt="Multiboot2 / PVH" />
-  <img src="https://img.shields.io/badge/Security-W%5EX%20%2B%20Ring%203-f59e0b?style=for-the-badge&logo=shield&logoColor=white" alt="W^X + Ring 3" />
-  <img src="https://img.shields.io/badge/QEMU%20Tests-25%2F25%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
+  <img src="https://img.shields.io/badge/Security-W%5EX%20%2B%20SMEP%20%2B%20Ring%203-f59e0b?style=for-the-badge&logo=shield&logoColor=white" alt="W^X + SMEP + Ring 3" />
+  <img src="https://img.shields.io/badge/QEMU%20Tests-32%2F32%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
 </p>
 
 <p>
@@ -68,39 +68,39 @@ OwnKrn boots directly in `qemu-system-x86_64` into 64-bit Long Mode, enforces **
     <td width="50%" valign="top">
       <h3>⚙️ CPU Tables, IRQs &amp; Drivers</h3>
       <ul>
-        <li>64-bit <b>GDT + TSS</b> (<code>RSP0</code> switching + <code>IST1</code> isolated double-fault stack)</li>
-        <li>256-entry <b>IDT</b> with full register dumps &amp; <code>RBP</code> stack backtraces (<code>kpanic</code>)</li>
-        <li>Remapped <b>8259 PIC</b> (vectors 32–47) &amp; <b>100 Hz PIT</b> timer</li>
-        <li><b>COM1 16550 UART</b>, <b>VGA Console</b> (ANSI clear), <b>PS/2 Keyboard</b> &amp; <b>TTY</b></li>
+        <li>Hardware hardening: <code>NXE</code>, <code>CR0.WP</code> &amp; <b><code>CR4.SMEP</code></b> enabled at boot</li>
+        <li>64-bit <b>GDT + TSS</b> (<code>RSP0</code> switching + <code>IST1</code> isolated double-fault stack) &amp; 256-entry <b>IDT</b></li>
+        <li>Remapped <b>8259 PIC</b>, <b>100 Hz PIT</b> timer &amp; <b>CMOS RTC</b> wall-clock (<code>/proc/rtc</code>)</li>
+        <li><b>COM1 UART</b>, <b>VGA Console</b> (ANSI colors + clear), <b>PS/2 Keyboard</b> &amp; <b>TTY</b> (<code>Ctrl+C</code>/<code>Ctrl+D</code>)</li>
       </ul>
     </td>
     <td width="50%" valign="top">
-      <h3>🔄 Preemptive Multitasking</h3>
+      <h3>🔄 Preemptive Multitasking &amp; Signals</h3>
       <ul>
         <li>Timer-driven round-robin scheduler (<code>struct task</code>, 20 ms quantum)</li>
         <li>Assembly context switcher (<code>switch_context</code> + per-CPU <code>GS</code> base)</li>
-        <li>Kernel threads, <code>sleep_ms</code>, blocking <code>waitpid</code> &amp; zombie reaping</li>
-        <li>IRQ-safe spinlocks (<code>spin_lock_irqsave</code> / <code>spin_unlock_irqrestore</code>)</li>
+        <li>POSIX signals (<code>SIGINT</code> via <code>Ctrl+C</code>, <code>SIGTERM</code>, <code>SIGKILL</code>, <code>SIGPIPE</code>)</li>
+        <li>PID 1 orphan reaper, <code>WNOHANG</code>, Ring 3 fault containment &amp; IRQ-safe spinlocks</li>
       </ul>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>🗂️ Virtual File System (VFS)</h3>
+      <h3>🗂️ Virtual File System &amp; Unix IPC</h3>
       <ul>
-        <li>Unified VFS core with path normalization (<code>.</code> / <code>..</code>), mounts &amp; per-task FDs</li>
-        <li>Writable in-memory <b><code>tmpfs</code></b> root filesystem (<code>/</code>)</li>
-        <li>POSIX <code>ustar</code> <b><code>initrd</code></b> unpacker for <code>/bin/*</code> &amp; <code>/etc/motd</code></li>
-        <li><b><code>devfs</code></b> (<code>/dev/null</code>, <code>zero</code>, <code>tty</code>, <code>serial</code>) &amp; live <b><code>procfs</code></b> (<code>/proc/tasks</code>, <code>meminfo</code>, <code>uptime</code>, <code>version</code>)</li>
+        <li>Refcounted VFS core (safe open-file <code>unlink</code>), spinlock-safe <b><code>tmpfs</code></b> &amp; <code>ustar</code> <b><code>initrd</code></b></li>
+        <li>Kernel ring-buffer <b>Unix Pipes</b> (<code>pipe</code>, <code>dup</code>, <code>dup2</code>) with EOF &amp; <code>SIGPIPE</code></li>
+        <li><b><code>devfs</code></b> (<code>/dev/null</code>, <code>zero</code>, <code>tty</code>, <code>serial</code>)</li>
+        <li>Live <b><code>procfs</code></b> (<code>/proc/tasks</code>, <code>meminfo</code>, <code>uptime</code>, <code>rtc</code>, <code>version</code>)</li>
       </ul>
     </td>
     <td width="50%" valign="top">
       <h3>🛡️ Ring 3 Userspace &amp; ELF64</h3>
       <ul>
         <li>Fast <code>SYSCALL</code>/<code>SYSRET</code> MSR path with <code>swapgs</code> kernel stack switching</li>
-        <li><b>23 Linux-compatible x86_64 syscalls</b> (<code>fork</code>, <code>execve</code>, <code>wait4</code>, <code>brk</code>, <code>open</code>, <code>read</code>, <code>write</code>, ...)</li>
+        <li><b>28 Linux-compatible x86_64 syscalls</b> (<code>fork</code>, <code>execve</code>, <code>pipe</code>, <code>dup2</code>, <code>kill</code>, <code>clock_gettime</code>, ...)</li>
         <li>Hardened <code>copy_from_user</code>/<code>copy_to_user</code> PTE validation (<code>-EFAULT</code> on kernel ptrs)</li>
-        <li>Static <b>ELF64</b> loader, freestanding <code>user/libc</code>, <code>/bin/init</code> &amp; <code>/bin/sh</code></li>
+        <li>Static <b>ELF64</b> loader, coalescing <code>user/libc</code>, <code>/bin/init</code>, <code>/bin/sh</code> &amp; coreutils</li>
       </ul>
     </td>
   </tr>
@@ -152,24 +152,25 @@ flowchart LR
 
 | Category | Commands |
 | :--- | :--- |
-| 📁 **Filesystem** | `ls [dir]`, `cd [dir]`, `pwd`, `cat <file...>`, `echo [args...] [>\|>> file]`, `mkdir <dir>`, `touch <file>`, `rm <path>` |
-| 📊 **System Info** | `uname [-a]`, `ps` (`/proc/tasks`), `free` / `mem` (`/proc/meminfo`), `uptime` (`/proc/uptime`) |
-| ⚡ **External ELF64** | `hello [name]` (spawns Ring 3 ELF via `fork`+`execve`), `selftest` (runs full Ring 3 syscall & `-EFAULT` security suite) |
-| 🔌 **Control** | `help`, `clear` (ANSI + VGA), `reboot`, `halt` / `poweroff`, `exit` |
+| 📁 **Filesystem** | `ls [dir]`, `cd [dir]`, `pwd`, `cat [file...]`, `echo [args...]`, `mkdir <dir>`, `touch <file>`, `rm <path>` |
+| 🔀 **Pipelines & I/O** | Full multi-stage pipelines (`ps \| grep U3`, `cat /etc/motd \| wc`) + `<`, `>`, `>>` for both built-ins & ELF64 binaries |
+| 📊 **System Info** | `uname [-a]`, `ps` (`/proc/tasks`), `free` / `mem` (`/proc/meminfo`), `uptime` (`/proc/uptime`), `date` (`/proc/rtc`) |
+| ⚡ **Ring 3 ELF64 Apps** | `hello [name]`, `grep <pat> [file]`, `wc [file]`, `hexdump [file]`, `date`, `sleep <ms>`, `selftest`, `faulttest` |
+| 🔌 **Control** | `help`, `kill <pid> [sig]`, `clear` (ANSI + VGA), `reboot`, `halt` / `poweroff`, `exit` |
 
 <details>
-<summary>📡 <b>View Linux-Compatible x86_64 Syscall Table (23 Syscalls)</b></summary>
+<summary>📡 <b>View Linux-Compatible x86_64 Syscall Table (28 Syscalls)</b></summary>
 
-| `#` | Syscall | `#` | Syscall | `#` | Syscall |
-| :---: | :--- | :---: | :--- | :---: | :--- |
-| `0` | `read` | `24` | `sched_yield` | `78` | `getdents` |
-| `1` | `write` | `35` | `nanosleep` | `79` | `getcwd` |
-| `2` | `open` | `39` | `getpid` | `80` | `chdir` |
-| `3` | `close` | `57` | `fork` | `83` | `mkdir` |
-| `4` | `stat` | `59` | `execve` | `87` | `unlink` |
-| `5` | `fstat` | `60` | `exit` | `110` | `getppid` |
-| `8` | `lseek` | `61` | `wait4` | `169` | `reboot` |
-| `12` | `brk` | `63` | `uname` | — | — |
+| `#` | Syscall | `#` | Syscall | `#` | Syscall | `#` | Syscall |
+| :---: | :--- | :---: | :--- | :---: | :--- | :---: | :--- |
+| `0` | `read` | `12` | `brk` | `59` | `execve` | `80` | `chdir` |
+| `1` | `write` | `22` | `pipe` | `60` | `exit` | `83` | `mkdir` |
+| `2` | `open` | `24` | `sched_yield` | `61` | `wait4` | `87` | `unlink` |
+| `3` | `close` | `32` | `dup` | `62` | `kill` | `110` | `getppid` |
+| `4` | `stat` | `33` | `dup2` | `63` | `uname` | `169` | `reboot` |
+| `5` | `fstat` | `35` | `nanosleep` | `78` | `getdents` | `228` | `clock_gettime` |
+| `8` | `lseek` | `39` | `getpid` | `79` | `getcwd` | — | — |
+| — | — | `57` | `fork` | — | — | — | — |
 
 </details>
 
@@ -190,7 +191,7 @@ make check-tools
 # 2. Build kernel.elf, Ring 3 userspace ELF binaries, and initrd.tar
 make
 
-# 3. Run the 25-check automated end-to-end QEMU test suite
+# 3. Run the 32-check automated end-to-end QEMU test suite
 make test
 
 # 4. Boot interactively in your terminal (COM1 serial)
@@ -200,7 +201,7 @@ make run
 | Command | Description |
 | :--- | :--- |
 | `make` | Compiles `build/kernel.elf`, all `user/` ELF64 binaries, and `build/initrd.tar` |
-| `make test` | Runs [tests/run_tests.sh](tests/run_tests.sh) (25 automated QEMU boot, VFS, Ring 3 & poweroff assertions) |
+| `make test` | Runs [tests/run_tests.sh](tests/run_tests.sh) (32 automated QEMU boot, SMEP, VFS, pipe, signal, Ring 3 & poweroff assertions) |
 | `make run` | Boots OwnKrn interactively in headless QEMU (`-display none -serial stdio`) |
 | `make run-gui` | Boots OwnKrn with graphical VGA text display + serial console |
 | `make debug` | Pauses QEMU with GDB stub listening on `tcp::1234` |
@@ -246,7 +247,8 @@ OWN KRN/
 - [x] **Phase 4** — Preemptive round-robin multitasking, `switch_context()`, `waitpid()`, and IRQ-safe spinlocks
 - [x] **Phase 5** — VFS core, writable `tmpfs`, POSIX `ustar` `initrd`, `devfs`, `procfs`, and canonical TTY
 - [x] **Phase 6** — `SYSCALL`/`SYSRET` MSR path, `copy_from/to_user` (`-EFAULT`), static ELF64 loader, `fork()` & `execve()`
-- [x] **Phase 7** — Freestanding `user/libc`, PID 1 `/bin/init`, interactive `/bin/sh`, 25/25 QEMU E2E tests & documentation
+- [x] **Phase 7** — Freestanding `user/libc`, PID 1 `/bin/init`, interactive `/bin/sh`, automated QEMU E2E tests & documentation
+- [x] **v0.2.0 Hardening & Unix IPC** — Refcounted VFS/tmpfs, `CR4.SMEP`, CMOS RTC (`date`), `pipe`/`dup`/`dup2` + shell pipelines (`|`, `<`, `>`, `>>`), POSIX `kill`/`SIGINT`, Ring 3 fault containment, `grep`/`wc`/`hexdump`/`sleep` & GitHub Actions CI (32/32 tests passing)
 
 ---
 

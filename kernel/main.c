@@ -5,6 +5,7 @@
 #include <arch/pit.h>
 #include <drivers/console.h>
 #include <drivers/keyboard.h>
+#include <drivers/rtc.h>
 #include <drivers/serial.h>
 #include <drivers/tty.h>
 #include <fs/vfs.h>
@@ -27,19 +28,34 @@ static uint64_t current_rip(void) {
     return rip;
 }
 
+static void enable_cpu_security_features(void) {
+    uint32_t max_leaf = 0, ebx = 0;
+    cpuid_leaf(0, 0, &max_leaf, NULL, NULL, NULL);
+    bool smep_enabled = false;
+    if (max_leaf >= 7) {
+        cpuid_leaf(7, 0, NULL, &ebx, NULL, NULL);
+        if (ebx & (1U << 7)) { /* SMEP */
+            write_cr4(read_cr4() | (1ULL << 20));
+            smep_enabled = true;
+        }
+    }
+    pr_ok("CPU hardening : NXE=on, WP=on, SMEP=%s\n", smep_enabled ? "on" : "n/a");
+}
+
 void kmain(uint64_t boot_magic, uint64_t boot_info_phys) {
     serial_init();
     console_init();
 
     printk("\n");
     printk("====================================================\n");
-    printk("  OwnKrn 0.1.0-x86_64 (Linux-Inspired OS Kernel)\n");
+    printk("  OwnKrn 0.2.0-x86_64 (Linux-Inspired OS Kernel)\n");
     printk("====================================================\n");
 
     uint64_t rip = current_rip();
     KASSERT(rip >= KERNEL_VIRT_BASE);
     pr_ok("Long Mode active in higher half (RIP=0x%016llx)\n",
           (unsigned long long)rip);
+    enable_cpu_security_features();
 
     if (!bootinfo_parse(boot_magic, boot_info_phys, &g_boot_info)) {
         kpanic("Failed to parse boot info (magic=0x%llx)",
@@ -48,6 +64,11 @@ void kmain(uint64_t boot_magic, uint64_t boot_info_phys) {
     pr_info("Boot protocol : %s (%llu MiB usable RAM)\n",
             g_boot_info.protocol,
             (unsigned long long)(g_boot_info.total_usable_ram / (1024ULL * 1024ULL)));
+
+    struct rtc_time rt;
+    rtc_read(&rt);
+    pr_info("CMOS RTC      : %04u-%02u-%02u %02u:%02u:%02u UTC\n",
+            rt.year, rt.month, rt.day, rt.hour, rt.minute, rt.second);
 
     /* Core CPU tables, interrupt controller, timer & TTY */
     gdt_init();
@@ -87,7 +108,7 @@ void kmain(uint64_t boot_magic, uint64_t boot_info_phys) {
 
     /* Kernel idle / init reaper loop */
     int status = 0;
-    sched_waitpid(init_pid, &status);
+    sched_waitpid(init_pid, &status, 0);
     pr_warn("/bin/init exited (status=%d); halting system.\n", status);
     arch_poweroff();
 }

@@ -43,6 +43,18 @@ void *u_sbrk(intptr_t inc) {
     return (void *)(uintptr_t)cur;
 }
 
+int u_pipe(int pipefd[2]) {
+    return (int)u_syscall(SYS_pipe, (uint64_t)(uintptr_t)pipefd, 0, 0, 0, 0, 0);
+}
+
+int u_dup(int oldfd) {
+    return (int)u_syscall(SYS_dup, (uint64_t)oldfd, 0, 0, 0, 0, 0);
+}
+
+int u_dup2(int oldfd, int newfd) {
+    return (int)u_syscall(SYS_dup2, (uint64_t)oldfd, (uint64_t)newfd, 0, 0, 0, 0);
+}
+
 pid_t u_getpid(void) {
     return (pid_t)u_syscall(SYS_getpid, 0, 0, 0, 0, 0, 0);
 }
@@ -66,9 +78,17 @@ void u_exit(int code) {
     }
 }
 
-pid_t u_waitpid(pid_t pid, int *status) {
+pid_t u_waitpid_opts(pid_t pid, int *status, int options) {
     return (pid_t)u_syscall(SYS_wait4, (uint64_t)(int64_t)pid,
-                            (uint64_t)(uintptr_t)status, 0, 0, 0, 0);
+                            (uint64_t)(uintptr_t)status, (uint64_t)options, 0, 0, 0);
+}
+
+pid_t u_waitpid(pid_t pid, int *status) {
+    return u_waitpid_opts(pid, status, 0);
+}
+
+int u_kill(pid_t pid, int sig) {
+    return (int)u_syscall(SYS_kill, (uint64_t)(int64_t)pid, (uint64_t)sig, 0, 0, 0, 0);
 }
 
 int u_uname(struct utsname *u) {
@@ -104,6 +124,11 @@ int u_msleep(uint64_t ms) {
     return (int)u_syscall(SYS_nanosleep, (uint64_t)(uintptr_t)&ts, 0, 0, 0, 0, 0);
 }
 
+int u_clock_gettime(int clk_id, struct timespec *ts) {
+    return (int)u_syscall(SYS_clock_gettime, (uint64_t)clk_id,
+                          (uint64_t)(uintptr_t)ts, 0, 0, 0, 0);
+}
+
 void u_poweroff(void) {
     u_syscall(SYS_reboot, OWNKRN_CMD_POWEROFF, 0, 0, 0, 0, 0);
 }
@@ -112,44 +137,119 @@ void u_reboot(void) {
     u_syscall(SYS_reboot, OWNKRN_CMD_REBOOT, 0, 0, 0, 0, 0);
 }
 
-/* ---------------- Simple brk-backed malloc ---------------- */
+/* ---------------- Coalescing brk-backed malloc ---------------- */
 
 struct ublock {
     size_t         size;
     int            free;
+    struct ublock *prev;
     struct ublock *next;
 };
 
-static struct ublock *g_uheap = NULL;
+#define UHDR_SIZE sizeof(struct ublock)
+#define UMIN_SPLIT (UHDR_SIZE + 32)
+
+static struct ublock *g_uhead = NULL;
+static struct ublock *g_utail = NULL;
 
 void *malloc(size_t size) {
     if (size == 0) size = 16;
     size = (size + 15) & ~15ULL;
 
-    for (struct ublock *b = g_uheap; b != NULL; b = b->next) {
-        if (b->free && b->size >= size) {
-            b->free = 0;
-            return (uint8_t *)b + sizeof(struct ublock);
+    for (struct ublock *b = g_uhead; b != NULL; b = b->next) {
+        if (!b->free || b->size < size) continue;
+
+        /* Split block when remainder can hold another allocation */
+        if (b->size >= size + UMIN_SPLIT) {
+            struct ublock *rem = (struct ublock *)((uint8_t *)b + UHDR_SIZE + size);
+            rem->size = b->size - size - UHDR_SIZE;
+            rem->free = 1;
+            rem->prev = b;
+            rem->next = b->next;
+            if (b->next) b->next->prev = rem;
+            else g_utail = rem;
+            b->next = rem;
+            b->size = size;
         }
+        b->free = 0;
+        return (uint8_t *)b + UHDR_SIZE;
     }
 
-    size_t total = sizeof(struct ublock) + size;
-    void *mem = u_sbrk((intptr_t)total);
+    size_t grow = UHDR_SIZE + size;
+    if (grow < 4096) grow = 4096;
+    grow = (grow + 15) & ~15ULL;
+
+    void *mem = u_sbrk((intptr_t)grow);
     if (mem == (void *)-1) {
         return NULL;
     }
+
     struct ublock *b = (struct ublock *)mem;
-    b->size = size;
+    b->size = grow - UHDR_SIZE;
     b->free = 0;
-    b->next = g_uheap;
-    g_uheap = b;
-    return (uint8_t *)b + sizeof(struct ublock);
+    b->prev = g_utail;
+    b->next = NULL;
+    if (g_utail) g_utail->next = b;
+    else g_uhead = b;
+    g_utail = b;
+
+    if (b->size >= size + UMIN_SPLIT) {
+        struct ublock *rem = (struct ublock *)((uint8_t *)b + UHDR_SIZE + size);
+        rem->size = b->size - size - UHDR_SIZE;
+        rem->free = 1;
+        rem->prev = b;
+        rem->next = NULL;
+        b->next = rem;
+        b->size = size;
+        g_utail = rem;
+    }
+
+    return (uint8_t *)b + UHDR_SIZE;
+}
+
+void *calloc(size_t nmemb, size_t size) {
+    size_t total = nmemb * size;
+    if (nmemb != 0 && total / nmemb != size) return NULL;
+    void *p = malloc(total);
+    if (p) memset(p, 0, total);
+    return p;
 }
 
 void free(void *ptr) {
     if (!ptr) return;
-    struct ublock *b = (struct ublock *)((uint8_t *)ptr - sizeof(struct ublock));
+    struct ublock *b = (struct ublock *)((uint8_t *)ptr - UHDR_SIZE);
     b->free = 1;
+
+    /* Coalesce with next contiguous free block */
+    if (b->next && b->next->free &&
+        ((uint8_t *)b + UHDR_SIZE + b->size == (uint8_t *)b->next)) {
+        struct ublock *nxt = b->next;
+        b->size += UHDR_SIZE + nxt->size;
+        b->next = nxt->next;
+        if (b->next) b->next->prev = b;
+        else g_utail = b;
+    }
+    /* Coalesce with previous contiguous free block */
+    if (b->prev && b->prev->free &&
+        ((uint8_t *)b->prev + UHDR_SIZE + b->prev->size == (uint8_t *)b)) {
+        struct ublock *prv = b->prev;
+        prv->size += UHDR_SIZE + b->size;
+        prv->next = b->next;
+        if (prv->next) prv->next->prev = prv;
+        else g_utail = prv;
+    }
+}
+
+void *realloc(void *ptr, size_t size) {
+    if (!ptr) return malloc(size);
+    if (size == 0) { free(ptr); return NULL; }
+    struct ublock *b = (struct ublock *)((uint8_t *)ptr - UHDR_SIZE);
+    if (b->size >= size) return ptr;
+    void *np = malloc(size);
+    if (!np) return NULL;
+    memcpy(np, ptr, b->size);
+    free(ptr);
+    return np;
 }
 
 /* ---------------- String & memory helpers ---------------- */
@@ -212,6 +312,29 @@ char *strchr(const char *s, int c) {
         s++;
     }
     return (c == '\0') ? (char *)s : NULL;
+}
+
+char *strstr(const char *haystack, const char *needle) {
+    if (!needle[0]) return (char *)haystack;
+    size_t nlen = strlen(needle);
+    for (; *haystack; haystack++) {
+        if (*haystack == *needle && strncmp(haystack, needle, nlen) == 0) {
+            return (char *)haystack;
+        }
+    }
+    return NULL;
+}
+
+int atoi(const char *s) {
+    int sign = 1, val = 0;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '-') { sign = -1; s++; }
+    else if (*s == '+') s++;
+    while (*s >= '0' && *s <= '9') {
+        val = val * 10 + (*s - '0');
+        s++;
+    }
+    return sign * val;
 }
 
 /* ---------------- Formatted output ---------------- */

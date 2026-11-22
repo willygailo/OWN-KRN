@@ -93,12 +93,14 @@ C_SRCS := \
 	mm/kmalloc.c \
 	fs/vfs.c \
 	fs/tmpfs.c \
+	fs/pipe.c \
 	fs/initrd.c \
 	fs/devfs.c \
 	fs/procfs.c \
 	drivers/serial.c \
 	drivers/console.c \
 	drivers/keyboard.c \
+	drivers/rtc.c \
 	drivers/tty.c \
 	lib/string.c \
 	lib/vsnprintf.c
@@ -117,14 +119,20 @@ USER_PROGS := \
 	$(USER_BIN)/init \
 	$(USER_BIN)/sh \
 	$(USER_BIN)/hello \
+	$(USER_BIN)/grep \
+	$(USER_BIN)/wc \
+	$(USER_BIN)/hexdump \
+	$(USER_BIN)/date \
+	$(USER_BIN)/sleep \
 	$(USER_BIN)/selftest \
+	$(USER_BIN)/faulttest \
 	$(USER_BIN)/child_helper
 
 DEPS := $(OBJS:.o=.d) $(USER_OBJ)/libc/ulibc.c.d
 
 QEMU_COMMON := \
 	-machine pc \
-	-cpu qemu64,+nx \
+	-cpu qemu64,+nx,+smep \
 	-m 256M \
 	-no-reboot \
 	-d guest_errors,cpu_reset \

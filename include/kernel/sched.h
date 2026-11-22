@@ -8,6 +8,15 @@
 #define TASK_KSTACK_SIZE    16384
 #define SCHED_QUANTUM_TICKS 2
 
+/* waitpid options */
+#define WNOHANG             1
+
+/* Basic POSIX signals */
+#define SIGINT              2
+#define SIGKILL             9
+#define SIGPIPE             13
+#define SIGTERM             15
+
 struct file_desc;
 
 enum task_state {
@@ -50,6 +59,7 @@ struct task {
 
     int             exit_code;
     pid_t           wait_target;
+    uint32_t        pending_sigs;
 
     char            cwd[256];
     struct file_desc *fds[TASK_MAX_FDS];
@@ -62,15 +72,20 @@ struct task  *sched_current(void);
 struct task  *sched_get_task(pid_t pid);
 struct task  *sched_task_table(size_t *out_max);
 struct task  *sched_alloc_task(const char *name, pid_t ppid, uint64_t cr3, bool is_user);
+void          sched_make_ready(struct task *t);
 
 pid_t         kthread_create(const char *name, kthread_fn_t fn, void *arg);
 void          sched_yield(void);
 void          sleep_ms(uint64_t ms);
 void          sched_tick(void);
 NORETURN void task_exit(int code);
-int           sched_waitpid(pid_t pid, int *status_out);
+int           sched_waitpid(pid_t pid, int *status_out, int options);
 void          sched_wake_parent(pid_t ppid);
 void          sched_post_switch(void);
+
+int           sched_send_signal(pid_t pid, int sig);
+void          sched_signal_foreground(int sig);
+void          sched_check_signals(void);
 
 struct cpu_local *arch_cpu_local(void);
 
