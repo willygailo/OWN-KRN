@@ -1,0 +1,42 @@
+# Build outputs (kernel, userspace, initrd, ISO, QEMU logs)
+build/
+
+# Compiled objects, dependency files & binary images
+*.o
+*.d
+*.a
+*.elf
+*.bin
+*.iso
+*.img
+*.map
+*.sym
+*.out
+
+# Archives generated at build time
+initrd.tar
+*.tar.gz
+
+# QEMU & GDB runtime artifacts
+qemu.log
+*.log
+.gdb_history
+core
+core.*
+
+# Python bytecode (test runner)
+__pycache__/
+*.py[cod]
+
+# Editor & IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.clangd/
+compile_commands.json
+
+# OS metadata
+.DS_Store
+Thumbs.db

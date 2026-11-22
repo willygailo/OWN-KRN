@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="530" viewBox="0 0 880 530" role="img" aria-label="OwnKrn x86_64 Live QEMU Boot and Shell Preview">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d1117"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="barGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1f2937"/>
+      <stop offset="100%" stop-color="#161b22"/>
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="112%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- Outer Frame -->
+  <rect x="12" y="10" width="856" height="508" rx="14" fill="url(#bgGrad)" stroke="#30363d" stroke-width="1.5" filter="url(#shadow)"/>
+
+  <!-- Window Title Bar -->
+  <path d="M 12 24 Q 12 10 26 10 L 854 10 Q 868 10 868 24 L 868 46 L 12 46 Z" fill="url(#barGrad)"/>
+  <line x1="12" y1="46" x2="868" y2="46" stroke="#30363d" stroke-width="1"/>
+  <circle cx="34" cy="28" r="6" fill="#ff5f56"/>
+  <circle cx="54" cy="28" r="6" fill="#ffbd2e"/>
+  <circle cx="74" cy="28" r="6" fill="#27c93f"/>
+  <text x="440" y="32" text-anchor="middle" fill="#9ca3af" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12.5" font-weight="600">
+    qemu-system-x86_64 — OwnKrn 0.1.0-x86_64 (COM1 Serial Console)
+  </text>
+
+  <!-- Terminal Output -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12.5">
+    <text x="28" y="72" fill="#38bdf8" font-weight="700">====================================================</text>
+    <text x="28" y="90" fill="#f8fafc" font-weight="700">  OwnKrn 0.1.0-x86_64 (Linux-Inspired OS Kernel)</text>
+    <text x="28" y="108" fill="#38bdf8" font-weight="700">====================================================</text>
+
+    <text x="28" y="130"><tspan fill="#34d399" font-weight="700">[ OK ]</tspan><tspan fill="#e2e8f0"> Long Mode active in higher half (RIP=0xffffffff802008ca)</tspan></text>
+    <text x="28" y="148"><tspan fill="#60a5fa" font-weight="700">[INFO]</tspan><tspan fill="#cbd5e1"> Boot protocol : PVH (QEMU ELF64) (255 MiB usable RAM)</tspan></text>
+    <text x="28" y="166"><tspan fill="#34d399" font-weight="700">[ OK ]</tspan><tspan fill="#e2e8f0"> GDT/TSS, IDT (256 vectors + IST1 #DF), PIC, PIT (100 Hz), KBD/TTY</tspan></text>
+    <text x="28" y="184"><tspan fill="#34d399" font-weight="700">[ OK ]</tspan><tspan fill="#e2e8f0"> PMM initialized: 253 MiB free / 255 MiB total (64867 frames)</tspan></text>
+    <text x="28" y="202"><tspan fill="#34d399" font-weight="700">[ OK ]</tspan><tspan fill="#e2e8f0"> VMM initialized: CR3=0x246000 (W^X: .text RX, .rodata RO+NX, .data RW+NX)</tspan></text>
+    <text x="28" y="220"><tspan fill="#34d399" font-weight="700">[ OK ]</tspan><tspan fill="#e2e8f0"> Scheduler initialized (preemptive RR, quantum=2 ticks, GS base set)</tspan></text>
+    <text x="28" y="238"><tspan fill="#34d399" font-weight="700">[ OK ]</tspan><tspan fill="#e2e8f0"> VFS initialized (root=tmpfs, /dev=devfs, /proc=procfs) · initrd: 6 files</tspan></text>
+    <text x="28" y="256"><tspan fill="#34d399" font-weight="700">[ OK ]</tspan><tspan fill="#e2e8f0"> SYSCALL/SYSRET MSRs configured · Launched /bin/init (pid=1) in Ring 3</tspan></text>
+
+    <text x="28" y="282" fill="#fbbf24" font-weight="600">Welcome to OwnKrn 0.1.0-x86_64!</text>
+    <text x="28" y="299" fill="#94a3b8">Custom freestanding Linux-inspired OS kernel built from scratch in C11 + x86_64 ASM.</text>
+
+    <text x="28" y="325"><tspan fill="#34d399" font-weight="700">ownkrn:/# </tspan><tspan fill="#f8fafc" font-weight="600">uname -a</tspan></text>
+    <text x="28" y="343" fill="#e2e8f0">OwnKrn ownkrn 0.1.0 #1 SMP PREEMPT x86_64 x86_64</text>
+
+    <text x="28" y="366"><tspan fill="#34d399" font-weight="700">ownkrn:/# </tspan><tspan fill="#f8fafc" font-weight="600">ps</tspan></text>
+    <text x="28" y="384" fill="#38bdf8">PID   PPID  STATE   RING  TICKS   NAME</text>
+    <text x="28" y="401" fill="#cbd5e1">0     0     READY   K0    2       kidle</text>
+    <text x="28" y="418" fill="#cbd5e1">1     0     WAIT    U3    0       init</text>
+    <text x="28" y="435" fill="#cbd5e1">2     1     RUN     U3    5       sh</text>
+
+    <text x="28" y="458"><tspan fill="#34d399" font-weight="700">ownkrn:/# </tspan><tspan fill="#f8fafc" font-weight="600">hello OwnKrn</tspan></text>
+    <text x="28" y="476" fill="#a78bfa">Hello, OwnKrn! (from Ring 3 ELF, pid=3, ppid=2)</text>
+
+    <text x="28" y="499"><tspan fill="#34d399" font-weight="700">ownkrn:/# </tspan><tspan fill="#38bdf8">█</tspan></text>
+  </g>
+</svg>

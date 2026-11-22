@@ -1,0 +1,190 @@
+# Build My Own Linux-Like x86_64 Operating System Kernel from Scratch
+
+## Role & Objective
+
+Act as a senior systems and OS kernel engineer. Your goal is to design, implement, and verify a **custom, freestanding, Linux-inspired 64-bit operating system kernel from scratch** in **C (C11/GNU11) + x86_64 Assembly**, running in **QEMU (`qemu-system-x86_64`)**, inside this workspace.
+
+Build a real, working, modular kernel—not a mock, simulator, or placeholder skeleton—progressing through a **full phased roadmap**:
+
+1. Toolchain & Build System
+2. Bootloader, 64-bit Long Mode & Early Logging
+3. CPU Descriptor Tables (GDT/TSS/IDT), Interrupts & Timer
+4. Memory Management (PMM, 4-Level VMM, Kernel Heap)
+5. Preemptive Multitasking & Synchronization
+6. Virtual File System (VFS), Initramfs, `tmpfs`, `devfs`, `/proc`
+7. Ring 3 Userspace, ELF64 Loader & Linux-Style Syscalls
+8. Interactive Userspace Shell, Core Utilities & End-to-End Tests
+
+---
+
+## Technical Specification
+
+### Architecture & Language
+- **Target Architecture**: `x86_64` (64-bit Long Mode, 4-level paging: PML4 → PDPT → PD → PT)
+- **Languages**: Freestanding C (`-std=gnu11`) + Assembly (`nasm -f elf64` or GNU `as`)
+- **Emulator & Debugger**: `qemu-system-x86_64`, `gdb`, `objdump`, `readelf`
+- **Mandatory Kernel Compiler Flags**:
+  - `-ffreestanding -nostdlib -nostdinc -fno-builtin -fno-stack-protector -fno-pie`
+  - `-mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mcmodel=kernel`
+  - `-Wall -Wextra -Werror -g -O2` (or `-O1` while debugging)
+- **Linker**: Custom linker script (`linker/kernel.ld`) placing the kernel in the **higher half** at virtual base `0xFFFFFFFF80000000` (matching `-mcmodel=kernel`) and physical load address `0x00100000` (1 MiB) or `0x00200000` (2 MiB).
+
+### Boot Strategy
+- **Primary**: **Multiboot2** bootable ISO via `grub-mkrescue` (`build/kernel.iso`), with a custom 32-bit protected-mode → 64-bit long-mode assembly bootstrap (`arch/x86_64/boot.asm`) that:
+  - Exposes a valid Multiboot2 header (requesting memory map, framebuffer/console, and module info)
+  - Verifies CPUID & Long Mode support
+  - Sets up initial boot page tables (identity-mapping low memory + mapping the higher-half kernel at `0xFFFFFFFF80000000`)
+  - Loads a 64-bit GDT, enables PAE (`CR4.PAE`), Long Mode (`IA32_EFER.LME`), and Paging (`CR0.PG`)
+  - Performs a far jump into 64-bit mode, loads the higher-half stack, and calls `kmain(uint64_t mb2_magic, uint64_t mb2_info_phys)`
+- **Toolchain Fallback**: During Phase 0, check whether `xorriso` and `mtools` are installed alongside `grub-mkrescue`. If `xorriso` is unavailable and cannot be installed in the environment, support direct QEMU boot (`qemu-system-x86_64 -kernel ...`) via a Multiboot1/PVH entry path (with `-initrd`) so development and automated testing never block.
+
+### Virtual Address Space Layout (Higher-Half)
+- `0x0000000000001000` – `0x00007FFFFFFFFFFF`: User space (ELF code/data, user heap via `brk`, user stack)
+- `0xFFFF800000000000`+: Physical memory direct map (HHDM) for fast physical-to-virtual translation
+- `0xFFFFC00000000000`+: Dynamic kernel heap (`kmalloc` / `valloc`)
+- `0xFFFFFFFF80000000`+: Kernel binary (`.text`, `.rodata`, `.data`, `.bss`)
+
+### Target Hardware / Emulated Devices
+- **Serial UART (`COM1`, `0x3F8`)**: Primary debug log sink & headless console (`-serial stdio`)
+- **Display**: VGA text console (`0xB8000`) or Multiboot2 linear framebuffer with built-in 8x16 bitmap font
+- **Interrupt Controller & Timer**: Remapped 8259 PIC (vectors `32`–`47`) + PIT (`IRQ0` at 100 Hz)
+- **Input**: PS/2 keyboard (`IRQ1`, scancode set 1 → ring buffer) + serial RX interrupt (`IRQ4`) for headless interactive shell
+
+---
+
+## Project Layout
+
+Organize the repository cleanly following a Linux-inspired modular structure:
+
+```text
+.
+├── Makefile
+├── README.md
+├── ARCHITECTURE.md
+├── linker/
+│   └── kernel.ld
+├── boot/
+│   └── grub/grub.cfg
+├── arch/x86_64/
+│   ├── boot.asm          # Multiboot2 header, 32->64-bit trampoline, boot page tables
+│   ├── gdt.c / gdt.asm   # 64-bit GDT + TSS (Ring 0/3 segments, RSP0, IST1)
+│   ├── idt.c / isr.asm   # 256-entry IDT, exception & IRQ assembly stubs
+│   ├── pic.c             # 8259 PIC remapping, masking, EOI
+│   ├── pit.c             # Programmable Interval Timer (100 Hz)
+│   ├── paging.c          # 4-level page table manipulation & TLB invalidation
+│   ├── switch.asm        # Context switch (callee-saved regs, RSP, CR3, TSS.RSP0)
+│   └── syscall.asm       # SYSCALL/SYSRET entry/exit trampoline (MSR setup + swapgs)
+├── kernel/
+│   ├── main.c            # kmain() initialization sequence
+│   ├── panic.c           # kpanic(), register dump, frame-pointer backtrace
+│   ├── printk.c          # Linux-style printk() with log levels (INFO/WARN/ERR)
+│   ├── sched.c           # struct task, ready queue, preemptive round-robin scheduler
+│   ├── syscall.c         # Linux-style syscall table & handlers + user pointer checks
+│   ├── elf.c             # ELF64 static executable loader
+│   └── sync.c            # IRQ-safe spinlocks
+├── mm/
+│   ├── pmm.c             # Bitmap physical frame allocator from Multiboot2 mmap
+│   ├── vmm.c             # Per-process address space management
+│   └── kmalloc.c         # Kernel heap allocator (kmalloc, kzalloc, krealloc, kfree)
+├── fs/
+│   ├── vfs.c             # VFS core (inode, dentry, file, mount, path lookup)
+│   ├── tmpfs.c           # Writable in-memory filesystem
+│   ├── initrd.c          # POSIX ustar/CPIO initramfs unpacker
+│   ├── devfs.c           # /dev/null, /dev/zero, /dev/tty, /dev/serial
+│   └── procfs.c          # /proc/version, /proc/meminfo, /proc/uptime
+├── drivers/
+│   ├── serial.c          # COM1 16550 UART (TX + RX interrupt)
+│   ├── console.c         # VGA / framebuffer terminal
+│   ├── keyboard.c        # PS/2 scancode driver
+│   └── tty.c             # TTY canonical/raw line discipline
+├── lib/
+│   ├── string.c          # memcpy, memmove, memset, memcmp, strlen, strcmp, strncpy
+│   └── vsnprintf.c       # Safe formatting engine
+├── include/              # Public kernel headers matching subsystem layout
+├── user/
+│   ├── libc/             # Minimal freestanding userspace libc + crt0.asm
+│   ├── init/             # PID 1 /bin/init
+│   └── sh/               # Interactive /bin/sh + core commands
+└── tests/
+    └── run_tests.sh      # Automated headless QEMU boot & regression test runner
+```
+
+---
+
+## Phased Implementation Roadmap & Verification Gates
+
+Work **one phase at a time**. Every phase **must** compile cleanly (`-Wall -Wextra -Werror`), boot in QEMU, and pass its verification gate before advancing to the next phase.
+
+### Phase 0: Environment Audit & Build Scaffolding
+- Inspect installed host tools (`gcc`, `clang`, `ld`, `nasm`, `as`, `make`, `qemu-system-x86_64`, `grub-mkrescue`, `xorriso`, `mtools`, `gdb`, `objdump`, `readelf`).
+- Create the directory layout, `linker/kernel.ld`, and `Makefile` with targets:
+  - `make` / `make all`: compile kernel and userspace artifacts
+  - `make run`: headless QEMU run (`-display none -serial stdio -no-reboot -no-shutdown`)
+  - `make run-gui`: graphical QEMU window + serial log
+  - `make debug`: QEMU paused with GDB server (`-s -S`) + print GDB attach command
+  - `make test`: run automated verification suite in `tests/run_tests.sh`
+  - `make clean`: remove all build outputs
+- **Gate**: `make` toolchain check succeeds and build scaffolding is verified.
+
+### Phase 1: Bootstrap, 64-Bit Long Mode & Early Logging
+- Implement `arch/x86_64/boot.asm`, `lib/string.c`, `lib/vsnprintf.c`, `drivers/serial.c`, `drivers/console.c`, `kernel/printk.c`, and initial `kernel/main.c`.
+- Enter 64-bit higher-half `kmain`, parse the Multiboot2 boot info structure, and log detected physical memory regions.
+- **Gate**: Boots in QEMU without triple-fault; serial output confirms higher-half execution (`RIP >= 0xFFFFFFFF80000000`), valid Multiboot2 magic, and parsed E820 memory map.
+
+### Phase 2: GDT, TSS, IDT, Exceptions, PIC, PIT & Keyboard
+- Configure 64-bit GDT (kernel/user code & data descriptors + 16-byte TSS with valid `RSP0` and `IST1` for double-fault isolation).
+- Build 256-entry IDT with assembly stubs capturing full GPRs, vector number, error code, and IRETQ frame.
+- Implement exception diagnostics (`#DE`, `#UD`, `#GP`, `#PF` decoding `CR2` & fault flags, `#DF` on `IST1`) and `kpanic()` with stack backtrace.
+- Remap 8259 PIC (`IRQ0`–`IRQ15` → vectors `32`–`47`), initialize PIT at 100 Hz (`IRQ0`), enable serial RX (`IRQ4`) and PS/2 keyboard (`IRQ1`).
+- **Gate**: QEMU test confirms timer ticks advance reliably, intentional software/exception self-tests are caught cleanly (when enabled), and serial/keyboard IRQ handlers receive input without crashing.
+
+### Phase 3: Memory Management (PMM, VMM & Kernel Heap)
+- **PMM (`mm/pmm.c`)**: Bitmap allocator initialized from Multiboot2 usable RAM entries; explicitly reserve low memory (`< 1 MiB`), kernel physical footprint, boot page tables, Multiboot2 info, and initrd module range.
+- **VMM (`mm/vmm.c`, `arch/x86_64/paging.c`)**: Establish complete higher-half direct map (HHDM) and proper W^X section permissions (`.text` RX, `.rodata` RO+NX, `.data`/`.bss` RW+NX). Implement `vmm_map_page`, `vmm_unmap_page`, `vmm_virt_to_phys`, and address space cloning for user processes.
+- **Kernel Heap (`mm/kmalloc.c`)**: Implement `kmalloc`, `kzalloc`, `krealloc`, and `kfree` backed by dynamically mapped kernel virtual pages with guard/canary checks and coalescing.
+- **Gate**: Built-in kernel memory self-test passes: frame alloc/free round-trip with zero leaks, virtual map/read/write/unmap checks, and randomized `kmalloc`/`kfree` stress tests (16 B → 64 KiB).
+
+### Phase 4: Preemptive Multitasking & Synchronization
+- Define Linux-inspired `struct task` (PID, name, state, kernel stack, saved registers, `cr3`, open FD table, parent/children, exit status).
+- Implement `arch/x86_64/switch.asm` and preemptive round-robin scheduling driven by `IRQ0` timer ticks (`kernel/sched.c`).
+- Add `kthread_create`, `sched_yield`, `sleep_ms`, `task_exit`, and IRQ-safe spinlocks (`kernel/sync.c`).
+- **Gate**: Spawn at least 3 concurrent kernel threads performing interleaved work and updating a spinlock-protected shared counter; verify deterministic completion with zero corruption or deadlocks in QEMU.
+
+### Phase 5: Virtual File System (VFS), Initramfs, `tmpfs`, `devfs` & `/proc`
+- Implement Linux-inspired VFS layer (`vfs_open`, `vfs_close`, `vfs_read`, `vfs_write`, `vfs_stat`, `vfs_readdir`, `vfs_mkdir`, `vfs_unlink`, mount table, canonical path resolution handling `.` and `..`).
+- Implement `tmpfs` (mounted at `/`), `initrd` ustar/CPIO unpacker (populating `/` from a build-generated archive containing `/bin/*` and `/etc/motd`), `devfs` (`/dev/null`, `/dev/zero`, `/dev/tty`, `/dev/serial`), and `procfs` (`/proc/version`, `/proc/meminfo`, `/proc/uptime`).
+- **Gate**: Kernel VFS self-test reads `/etc/motd` from `initrd`, creates/writes/reads/deletes files and nested directories in `tmpfs`, and reads `/dev/zero` and `/proc/meminfo`.
+
+### Phase 6: Ring 3 Userspace, ELF64 Loader & Linux-Style Syscalls
+- Configure `IA32_EFER.SCE`, `IA32_STAR`, `IA32_LSTAR`, `IA32_FMASK` and implement `arch/x86_64/syscall.asm` using `swapgs` + safe per-CPU kernel stack switching; update `TSS.RSP0` on every context switch.
+- Implement Linux x86_64 syscall ABI (`RAX` = syscall number; `RDI, RSI, RDX, R10, R8, R9` = args; `RAX` = return value or negative `-errno`) for:
+  - I/O & FS: `read`, `write`, `open`, `close`, `fstat`/`stat`, `lseek`, `getdents`, `mkdir`, `unlink`, `getcwd`, `chdir`
+  - Process & Memory: `exit`, `getpid`, `getppid`, `fork` (or `spawn`), `execve`, `waitpid`, `brk`, `nanosleep`, `uname`, `reboot`
+- Enforce strict `copy_from_user` / `copy_to_user` bounds validation so userspace can never read or overwrite kernel memory (`>= 0x0000800000000000`).
+- Implement static ELF64 loader (`kernel/elf.c`) mapping `PT_LOAD` segments with exact `R`/`W`/`X` permissions (`PTE_USER`, `PTE_WRITABLE`, `PTE_NX`), zeroing `.bss`, and setting up the initial user stack (`argc`, `argv`, 16-byte alignment).
+- **Gate**: Kernel boots into Ring 3 `/bin/init`; userspace successfully invokes `write`, `getpid`, `brk`, `fork`/`execve`/`waitpid`, and `exit`, and an invalid kernel-pointer syscall returns `-EFAULT` cleanly instead of crashing the kernel.
+
+### Phase 7: Interactive Userspace Shell & End-to-End Verification
+- Build a minimal freestanding `user/libc` (`crt0.asm`, syscall wrappers, `printf`, `malloc`, string functions).
+- Build `/bin/init` (PID 1) launching `/bin/sh` attached to `/dev/tty` (working over both QEMU serial console and PS/2 keyboard + display).
+- Implement `/bin/sh` with command parsing, path lookup (`/bin`), and commands:
+  - `help`, `uname`, `ls`, `cat`, `echo`, `pwd`, `cd`, `mkdir`, `touch`, `rm`, `ps`, `free`, `uptime`, `clear`, `halt`/`reboot`
+- Add `tests/run_tests.sh` driving QEMU headlessly (with timeout protection), sending shell commands over serial, and asserting exact expected output for filesystem operations, process creation, and system info.
+- Write concise, accurate `README.md` and `ARCHITECTURE.md` documenting memory map, boot flow, syscall table, build commands, and GDB debugging steps.
+- **Gate**: `make clean && make && make test` passes 100% end-to-end with zero compiler warnings and clean QEMU shutdown.
+
+---
+
+## Engineering & Debugging Rules
+
+1. **Zero Shortcuts / Zero Stubs**: Every subsystem must operate on real x86_64 CPU structures, page tables, interrupts, and hardware ports inside QEMU. Do not fake multitasking, memory isolation, or userspace execution.
+2. **Debug Rigorously**: Whenever a fault or triple-fault occurs, diagnose it systematically using QEMU logs (`-d int,cpu_reset -D build/qemu.log`), `readelf -lS build/kernel.elf`, `objdump -d`, and `gdb` rather than guessing.
+3. **Never Advance on a Broken Phase**: Do not begin Phase N+1 until Phase N builds cleanly with `-Werror` and passes its QEMU verification gate.
+4. **Clean, Auditable Code**: Keep functions modular, avoid magic numbers (define bitmasks/MSR constants in headers), and briefly comment x86_64 architectural invariants (e.g., GDT selector order required by `SYSRET`, stack alignment, `swapgs` polarity).
+5. **Clear Progress Reporting**: At the end of each phase, report the files created/modified, the exact build and QEMU test commands run, key serial log output verifying the gate, and proceed cleanly to the next phase.
+
+---
+
+## Start Now
+
+Begin with **Phase 0**: inspect the host toolchain and workspace, confirm the boot path (Multiboot2 ISO via `grub-mkrescue` + `xorriso`, or direct QEMU `-kernel` fallback if ISO tooling is absent), scaffold the project structure and `Makefile`, and proceed systematically phase by phase until the interactive shell boots and all automated QEMU tests pass.
