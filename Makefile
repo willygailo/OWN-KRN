@@ -159,6 +159,7 @@ C_SRCS := \
 	drivers/rtc.c \
 	drivers/tty.c \
 	drivers/ata.c \
+	drivers/pci.c \
 	drivers/speaker.c \
 	lib/string.c \
 	lib/vsnprintf.c
@@ -203,9 +204,18 @@ QEMU_COMMON := \
 	-d guest_errors,cpu_reset \
 	-D $(BUILD_DIR)/qemu.log
 
-.PHONY: all iso run run-gui debug test clean check-tools
+.PHONY: all iso run run-gui debug test clean check-tools defconfig menuconfig
 
-all: $(KERNEL) $(INITRD) $(DISK_IMG)
+all: include/generated/autoconf.h $(KERNEL) $(INITRD) $(DISK_IMG)
+
+include/generated/autoconf.h: configs/x86_64_defconfig scripts/kconfig.py
+	@$(PYTHON) scripts/kconfig.py syncconfig
+
+defconfig:
+	@$(PYTHON) scripts/kconfig.py defconfig
+
+menuconfig:
+	@$(PYTHON) scripts/kconfig.py menuconfig
 
 $(DISK_IMG):
 	@$(PYTHON) scripts/mkimg.py disk $(DISK_IMG) 4
@@ -229,7 +239,7 @@ $(KERNEL): $(OBJS) linker/kernel.ld
 	$(LD) $(LDFLAGS) -o $@ $(OBJS)
 	@echo "Built $@"
 
-$(OBJ_DIR)/%.c.o: %.c
+$(OBJ_DIR)/%.c.o: %.c include/generated/autoconf.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 

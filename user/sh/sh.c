@@ -4,14 +4,83 @@
 #define SH_MAX_ARGS   32
 #define SH_MAX_STAGES 8
 #define SH_HIST_MAX   32
+#define SH_ENV_MAX    24
+#define SH_JOBS_MAX   16
 
-static char g_history[SH_HIST_MAX][SH_LINE_MAX];
-static int  g_hist_count = 0;
-static char g_user[32] = "root";
-static char g_host[32] = "ownkrn";
+struct env_entry {
+    bool used;
+    char key[32];
+    char val[128];
+};
+
+struct bg_job {
+    bool  used;
+    int   id;
+    pid_t pid;
+    char  cmd[64];
+};
+
+static char             g_history[SH_HIST_MAX][SH_LINE_MAX];
+static int              g_hist_count = 0;
+static char             g_user[32] = "root";
+static char             g_host[32] = "ownkrn";
+static struct env_entry g_env[SH_ENV_MAX];
+static struct bg_job    g_jobs[SH_JOBS_MAX];
+static int              g_next_job_id = 1;
+static int              g_last_status = 0;
 
 static void write_str_fd(int fd, const char *s) {
     u_write(fd, s, strlen(s));
+}
+
+static void env_set(const char *key, const char *val) {
+    for (int i = 0; i < SH_ENV_MAX; i++) {
+        if (g_env[i].used && strcmp(g_env[i].key, key) == 0) {
+            strncpy(g_env[i].val, val, sizeof(g_env[i].val) - 1);
+            g_env[i].val[sizeof(g_env[i].val) - 1] = '\0';
+            return;
+        }
+    }
+    for (int i = 0; i < SH_ENV_MAX; i++) {
+        if (!g_env[i].used) {
+            g_env[i].used = true;
+            strncpy(g_env[i].key, key, sizeof(g_env[i].key) - 1);
+            g_env[i].key[sizeof(g_env[i].key) - 1] = '\0';
+            strncpy(g_env[i].val, val, sizeof(g_env[i].val) - 1);
+            g_env[i].val[sizeof(g_env[i].val) - 1] = '\0';
+            return;
+        }
+    }
+}
+
+static const char *env_get(const char *key) {
+    for (int i = 0; i < SH_ENV_MAX; i++) {
+        if (g_env[i].used && strcmp(g_env[i].key, key) == 0) {
+            return g_env[i].val;
+        }
+    }
+    return "";
+}
+
+static void env_unset(const char *key) {
+    for (int i = 0; i < SH_ENV_MAX; i++) {
+        if (g_env[i].used && strcmp(g_env[i].key, key) == 0) {
+            g_env[i].used = false;
+            return;
+        }
+    }
+}
+
+static void env_init(void) {
+    memset(g_env, 0, sizeof(g_env));
+    memset(g_jobs, 0, sizeof(g_jobs));
+    env_set("PATH",     "/bin");
+    env_set("HOME",     "/root");
+    env_set("USER",     "root");
+    env_set("HOSTNAME", "ownkrn");
+    env_set("SHELL",    "/bin/sh");
+    env_set("TERM",     "linux");
+    env_set("OSTYPE",   "linux-ownkrn");
 }
 
 static void history_add(const char *line) {
@@ -54,21 +123,28 @@ static void copy_fd(int in_fd, int out_fd) {
 static void cmd_help(int out_fd) {
     write_str_fd(out_fd,
         "\x1b[1;36mOwnKrn Interactive Shell (/bin/sh)\x1b[0m\n"
-        "  \x1b[1;32mSystem, Diagnostics & Info:\x1b[0m\n"
+        "  \x1b[1;32mSystem, Diagnostics & Linux Kernel:\x1b[0m\n"
         "    tester / bench      Interactive 6-Suite OS Diagnostics & Benchmark Center\n"
+        "    dmesg [-c]          Print or clear kernel ring buffer (/proc/kmsg)\n"
+        "    lspci / lsblk       List PCI Bus hardware devices & block partitions\n"
+        "    kconfig             Display compiled kernel Kconfig (.config)\n"
         "    fetch / neofetch    Display ASCII OS logo & live system telemetry\n"
         "    top / htop [-n 1]   Interactive real-time process & memory monitor\n"
-        "    uname [-a]          Print kernel & machine info\n"
+        "    uname [-a|-r|-s|-m] Print kernel & machine info\n"
         "    cpuinfo / irqs      Inspect /proc/cpuinfo & /proc/interrupts\n"
         "    ps / free / uptime  Inspect /proc/tasks, meminfo, uptime\n"
-        "    date                Display CMOS RTC date & UTC epoch\n"
-        "    whoami / hostname   Show or set active user / hostname\n"
-        "    history             Display command history (Up/Down arrows recall)\n"
+        "    id / su [user]      Show UID/GID credentials or switch user (root/guest)\n"
+        "    env / export K=V    Manage environment variables ($USER, $HOME, $?)\n"
+        "    jobs / fg [id]      Manage background jobs ('cmd &')\n"
         "  \x1b[1;32mFiles & Persistent Disk (/disk):\x1b[0m\n"
         "    fm [dir]            Dual-pane interactive TUI File Manager\n"
         "    df / sync           Show mounted filesystems (/disk ATA0) & flush\n"
         "    pwd / cd [dir]      Print or change working directory\n"
-        "    ls [-l] [dir]       List directory entries (colorized + sizes)\n"
+        "    ls [-l] [dir]       List directory entries (colorized + mode bits)\n"
+        "    chmod <oct> <path>  Change file mode permissions (e.g. chmod 700 f)\n"
+        "    find [dir] [-name]  Search files recursively across VFS\n"
+        "    sort / uniq [file]  Sort or deduplicate lines in files/pipelines\n"
+        "    which <cmd>         Locate builtin, alias, or /bin executable\n"
         "    tree [dir]          Render visual directory hierarchy\n"
         "    stat <path>         Inspect inode, type, mode, and byte size\n"
         "    cat / head / tail   Display full, first N, or last N lines\n"
@@ -94,6 +170,20 @@ static void join_path(const char *dir, const char *name, char *out, size_t cap) 
     } else {
         snprintf(out, cap, "%s/%s", dir, name);
     }
+}
+
+static void format_mode_perm(uint32_t type, uint32_t mode, char out[11]) {
+    out[0] = (type == 2) ? 'd' : (type == 3) ? 'c' : '-';
+    out[1] = (mode & 0400U) ? 'r' : '-';
+    out[2] = (mode & 0200U) ? 'w' : '-';
+    out[3] = (mode & 0100U) ? 'x' : '-';
+    out[4] = (mode & 0040U) ? 'r' : '-';
+    out[5] = (mode & 0020U) ? 'w' : '-';
+    out[6] = (mode & 0010U) ? 'x' : '-';
+    out[7] = (mode & 0004U) ? 'r' : '-';
+    out[8] = (mode & 0002U) ? 'w' : '-';
+    out[9] = (mode & 0001U) ? 'x' : '-';
+    out[10] = '\0';
 }
 
 static void cmd_ls(int argc, char **argv, int out_fd) {
@@ -122,25 +212,30 @@ static void cmd_ls(int argc, char **argv, int out_fd) {
             join_path(dir, ents[i].name, full, sizeof(full));
             struct uapi_stat st;
             uint64_t sz = 0;
+            uint32_t mode = (ents[i].type == 2) ? 0755U :
+                            (ents[i].type == 3) ? 0666U : 0644U;
             if (u_stat(full, &st) == 0) {
                 sz = st.size;
+                if (st.mode != 0) mode = st.mode;
+            }
+            if (strncmp(dir, "/bin", 4) == 0 || strcmp(full, "/bin") == 0) {
+                mode |= 0111U;
             }
 
             const char *color = "\x1b[0m";
             const char *tag   = "<FILE>";
-            const char *perm  = "-rw-r--r--";
             if (ents[i].type == 2) {
                 color = "\x1b[1;34m";
                 tag   = "<DIR> ";
-                perm  = "drwxr-xr-x";
             } else if (ents[i].type == 3) {
                 color = "\x1b[1;33m";
                 tag   = "<DEV> ";
-                perm  = "crw-rw-rw-";
-            } else if (strncmp(dir, "/bin", 4) == 0 || strcmp(full, "/bin") == 0) {
+            } else if (mode & 0111U) {
                 color = "\x1b[1;32m";
-                perm  = "-rwxr-xr-x";
             }
+
+            char perm[11];
+            format_mode_perm(ents[i].type, mode, perm);
 
             char line[256];
             if (long_fmt) {
@@ -549,18 +644,265 @@ static void cmd_uname(int argc, char **argv, int out_fd) {
         return;
     }
     char line[384];
-    if (argc > 1 && strcmp(argv[1], "-a") == 0) {
-        snprintf(line, sizeof(line), "%s %s %s %s %s\n",
-                 u.sysname, u.nodename, u.release, u.version, u.machine);
+    if (argc > 1) {
+        if (strcmp(argv[1], "-a") == 0) {
+            snprintf(line, sizeof(line), "%s %s %s %s %s\n",
+                     u.sysname, u.nodename, u.release, u.version, u.machine);
+        } else if (strcmp(argv[1], "-r") == 0) {
+            snprintf(line, sizeof(line), "%s\n", u.release);
+        } else if (strcmp(argv[1], "-m") == 0) {
+            snprintf(line, sizeof(line), "%s\n", u.machine);
+        } else if (strcmp(argv[1], "-n") == 0) {
+            snprintf(line, sizeof(line), "%s\n", u.nodename);
+        } else if (strcmp(argv[1], "-v") == 0) {
+            snprintf(line, sizeof(line), "%s\n", u.version);
+        } else {
+            snprintf(line, sizeof(line), "%s\n", u.sysname);
+        }
     } else {
         snprintf(line, sizeof(line), "%s\n", u.sysname);
     }
     write_str_fd(out_fd, line);
 }
 
+static void cmd_id(int out_fd) {
+    uint32_t uid = u_getuid();
+    uint32_t gid = u_getgid();
+    const char *uname = (uid == 0) ? "root" : "guest";
+    const char *gname = (gid == 0) ? "root" : "users";
+    char buf[128];
+    snprintf(buf, sizeof(buf), "uid=%u(%s) gid=%u(%s) groups=%u(%s)\n",
+             uid, uname, gid, gname, gid, gname);
+    write_str_fd(out_fd, buf);
+}
+
+static void cmd_su(int argc, char **argv) {
+    const char *target = (argc > 1) ? argv[1] : "root";
+    if (strcmp(target, "guest") == 0 || strcmp(target, "1000") == 0) {
+        u_setuid(1000);
+        u_setgid(1000);
+        strcpy(g_user, "guest");
+        env_set("USER", "guest");
+        env_set("HOME", "/home/guest");
+    } else if (strcmp(target, "root") == 0 || strcmp(target, "0") == 0) {
+        u_setuid(0);
+        u_setgid(0);
+        strcpy(g_user, "root");
+        env_set("USER", "root");
+        env_set("HOME", "/root");
+    } else {
+        printf("su: unknown user '%s' (available: root, guest)\n", target);
+    }
+}
+
+static void cmd_chmod(int argc, char **argv) {
+    if (argc < 3) {
+        printf("usage: chmod <octal_mode> <path>\n");
+        return;
+    }
+    uint32_t mode = 0;
+    const char *s = argv[1];
+    while (*s >= '0' && *s <= '7') {
+        mode = (mode << 3) | (uint32_t)(*s - '0');
+        s++;
+    }
+    int rc = u_chmod(argv[2], mode);
+    if (rc < 0) {
+        printf("chmod: cannot chmod '%s' (err=%d)\n", argv[2], rc);
+    }
+}
+
+static void cmd_env(int out_fd) {
+    for (int i = 0; i < SH_ENV_MAX; i++) {
+        if (g_env[i].used) {
+            char line[192];
+            snprintf(line, sizeof(line), "%s=%s\n", g_env[i].key, g_env[i].val);
+            write_str_fd(out_fd, line);
+        }
+    }
+}
+
+static void cmd_export(int argc, char **argv, int out_fd) {
+    if (argc < 2) {
+        cmd_env(out_fd);
+        return;
+    }
+    for (int i = 1; i < argc; i++) {
+        char *eq = strchr(argv[i], '=');
+        if (eq) {
+            *eq = '\0';
+            env_set(argv[i], eq + 1);
+            *eq = '=';
+        }
+    }
+}
+
+static bool match_name_pattern(const char *name, const char *pat) {
+    if (!pat || !pat[0] || strcmp(pat, "*") == 0) return true;
+    if (pat[0] == '*') {
+        size_t nlen = strlen(name);
+        size_t slen = strlen(pat + 1);
+        return (nlen >= slen && strcmp(name + nlen - slen, pat + 1) == 0);
+    }
+    return strstr(name, pat) != NULL;
+}
+
+static void find_walk(const char *dir, const char *pat, int depth, int out_fd) {
+    if (depth > 5) return;
+    int fd = u_open(dir, UAPI_O_RDONLY, 0);
+    if (fd < 0) return;
+
+    struct uapi_dirent ents[32];
+    struct uapi_dirent list[32];
+    int total = 0, n;
+    while ((n = u_getdents(fd, ents, 32)) > 0) {
+        for (int i = 0; i < n && total < 32; i++) {
+            if (strcmp(ents[i].name, ".") == 0 || strcmp(ents[i].name, "..") == 0) continue;
+            list[total++] = ents[i];
+        }
+    }
+    u_close(fd);
+
+    for (int i = 0; i < total; i++) {
+        char full[256];
+        join_path(dir, list[i].name, full, sizeof(full));
+        if (match_name_pattern(list[i].name, pat)) {
+            write_str_fd(out_fd, full);
+            write_str_fd(out_fd, "\n");
+        }
+        if (list[i].type == 2) {
+            find_walk(full, pat, depth + 1, out_fd);
+        }
+    }
+}
+
+static void cmd_find(int argc, char **argv, int out_fd) {
+    const char *dir = ".";
+    const char *pat = NULL;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-name") == 0 && i + 1 < argc) {
+            pat = argv[++i];
+        } else {
+            dir = argv[i];
+        }
+    }
+    if (!pat) {
+        write_str_fd(out_fd, dir);
+        write_str_fd(out_fd, "\n");
+    }
+    find_walk(dir, pat, 0, out_fd);
+}
+
+static void cmd_sort_uniq(int argc, char **argv, int in_fd, int out_fd, bool uniq_only) {
+    int fd = in_fd;
+    const char *path = (argc > 1) ? argv[1] : NULL;
+    if (path) {
+        fd = u_open(path, UAPI_O_RDONLY, 0);
+        if (fd < 0) {
+            printf("%s: cannot open '%s' (%d)\n", uniq_only ? "uniq" : "sort", path, fd);
+            return;
+        }
+    }
+
+    char buf[2048];
+    size_t total = 0;
+    ssize_t r;
+    while (total + 1 < sizeof(buf) &&
+           (r = u_read(fd, buf + total, sizeof(buf) - 1 - total)) > 0) {
+        total += (size_t)r;
+    }
+    buf[total] = '\0';
+    if (path) u_close(fd);
+
+    char *lines[64];
+    int nlines = 0;
+    char *p = buf;
+    while (*p && nlines < 64) {
+        char *nl = strchr(p, '\n');
+        if (nl) *nl = '\0';
+        if (*p || nl) {
+            lines[nlines++] = p;
+        }
+        if (!nl) break;
+        p = nl + 1;
+    }
+
+    if (!uniq_only) {
+        for (int i = 0; i < nlines; i++) {
+            for (int j = i + 1; j < nlines; j++) {
+                if (strcmp(lines[i], lines[j]) > 0) {
+                    char *tmp = lines[i];
+                    lines[i] = lines[j];
+                    lines[j] = tmp;
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < nlines; i++) {
+        if (uniq_only && i > 0 && strcmp(lines[i], lines[i - 1]) == 0) {
+            continue;
+        }
+        write_str_fd(out_fd, lines[i]);
+        write_str_fd(out_fd, "\n");
+    }
+}
+
+static void reap_bg_jobs(bool verbose) {
+    for (int i = 0; i < SH_JOBS_MAX; i++) {
+        if (!g_jobs[i].used) continue;
+        int st = 0;
+        pid_t r = u_waitpid_opts(g_jobs[i].pid, &st, UAPI_WNOHANG);
+        if (r == g_jobs[i].pid || r < 0) {
+            if (verbose) {
+                printf("[%d]+  Done                    %s (pid=%d)\n",
+                       g_jobs[i].id, g_jobs[i].cmd, g_jobs[i].pid);
+            }
+            g_jobs[i].used = false;
+        }
+    }
+}
+
+static void cmd_jobs(int out_fd) {
+    reap_bg_jobs(true);
+    for (int i = 0; i < SH_JOBS_MAX; i++) {
+        if (g_jobs[i].used) {
+            char line[128];
+            snprintf(line, sizeof(line), "[%d]+  Running                 %s & (pid=%d)\n",
+                     g_jobs[i].id, g_jobs[i].cmd, g_jobs[i].pid);
+            write_str_fd(out_fd, line);
+        }
+    }
+}
+
+static void cmd_fg(int argc, char **argv) {
+    int target_id = (argc > 1) ? atoi(argv[1]) : -1;
+    int slot = -1;
+    for (int i = SH_JOBS_MAX - 1; i >= 0; i--) {
+        if (!g_jobs[i].used) continue;
+        if (target_id < 0 || g_jobs[i].id == target_id) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) {
+        printf("fg: no current background job\n");
+        return;
+    }
+    printf("%s (pid=%d)\n", g_jobs[slot].cmd, g_jobs[slot].pid);
+    int st = 0;
+    u_waitpid(g_jobs[slot].pid, &st);
+    g_last_status = (st >> 8) & 0xFF;
+    g_jobs[slot].used = false;
+}
+
 static bool is_stateful_builtin(const char *cmd) {
     return strcmp(cmd, "cd") == 0 ||
            strcmp(cmd, "hostname") == 0 ||
+           strcmp(cmd, "su") == 0 ||
+           strcmp(cmd, "export") == 0 ||
+           strcmp(cmd, "unset") == 0 ||
+           strcmp(cmd, "fg") == 0 ||
            strcmp(cmd, "source") == 0 ||
            strcmp(cmd, "exit") == 0 ||
            strcmp(cmd, "halt") == 0 ||
@@ -581,9 +923,66 @@ static bool run_builtin(int argc, char **argv, int in_fd, int out_fd) {
             write_str_fd(out_fd, "\n");
         }
     } else if (strcmp(cmd, "cd") == 0) {
-        const char *target = (argc > 1) ? argv[1] : "/";
+        const char *target = (argc > 1) ? argv[1] : env_get("HOME");
+        if (!target || !target[0]) target = "/";
         int rc = u_chdir(target);
-        if (rc < 0) printf("cd: %s: error %d\n", target, rc);
+        if (rc < 0) {
+            printf("cd: %s: error %d\n", target, rc);
+            g_last_status = 1;
+        } else {
+            char ncwd[256];
+            if (u_getcwd(ncwd, sizeof(ncwd)) > 0) env_set("PWD", ncwd);
+            g_last_status = 0;
+        }
+    } else if (strcmp(cmd, "id") == 0) {
+        cmd_id(out_fd);
+    } else if (strcmp(cmd, "su") == 0) {
+        cmd_su(argc, argv);
+    } else if (strcmp(cmd, "chmod") == 0) {
+        cmd_chmod(argc, argv);
+    } else if (strcmp(cmd, "env") == 0 || strcmp(cmd, "printenv") == 0) {
+        cmd_env(out_fd);
+    } else if (strcmp(cmd, "export") == 0) {
+        cmd_export(argc, argv, out_fd);
+    } else if (strcmp(cmd, "unset") == 0) {
+        if (argc > 1) env_unset(argv[1]);
+    } else if (strcmp(cmd, "dmesg") == 0) {
+        print_file_to_fd("/proc/kmsg", out_fd);
+        if (argc > 1 && strcmp(argv[1], "-c") == 0) {
+            u_kmsg_clear();
+        }
+    } else if (strcmp(cmd, "lspci") == 0) {
+        print_file_to_fd("/proc/pci", out_fd);
+    } else if (strcmp(cmd, "lsblk") == 0) {
+        print_file_to_fd("/proc/partitions", out_fd);
+    } else if (strcmp(cmd, "kconfig") == 0) {
+        print_file_to_fd("/proc/config", out_fd);
+    } else if (strcmp(cmd, "find") == 0) {
+        cmd_find(argc, argv, out_fd);
+    } else if (strcmp(cmd, "sort") == 0) {
+        cmd_sort_uniq(argc, argv, in_fd, out_fd, false);
+    } else if (strcmp(cmd, "uniq") == 0) {
+        cmd_sort_uniq(argc, argv, in_fd, out_fd, true);
+    } else if (strcmp(cmd, "jobs") == 0) {
+        cmd_jobs(out_fd);
+    } else if (strcmp(cmd, "fg") == 0) {
+        cmd_fg(argc, argv);
+    } else if (strcmp(cmd, "which") == 0) {
+        if (argc < 2) {
+            printf("usage: which <command>\n");
+        } else {
+            char pbuf[128];
+            snprintf(pbuf, sizeof(pbuf), "/bin/%s", argv[1]);
+            struct uapi_stat wst;
+            if (u_stat(pbuf, &wst) == 0 && wst.type == 1) {
+                write_str_fd(out_fd, pbuf);
+                write_str_fd(out_fd, "\n");
+            } else {
+                char msg[128];
+                snprintf(msg, sizeof(msg), "%s: shell built-in command\n", argv[1]);
+                write_str_fd(out_fd, msg);
+            }
+        }
     } else if (strcmp(cmd, "ls") == 0 || strcmp(cmd, "ll") == 0) {
         if (strcmp(cmd, "ll") == 0) {
             char *ll_argv[4];
@@ -808,6 +1207,9 @@ static bool is_known_builtin(const char *cmd) {
     static const char *const builtins[] = {
         "echo", "cat", "head", "tail", "cp", "mv", "source",
         "calc", "cal", "beep", "df", "mounts", "sync",
+        "dmesg", "lspci", "lsblk", "kconfig", "id", "su", "chmod",
+        "env", "printenv", "export", "unset", "find", "sort", "uniq",
+        "which", "jobs", "fg",
         "ls", "ll", "tree", "stat", "history",
         "whoami", "hostname", "ps", "free", "mem", "uname",
         "uptime", "cpuinfo", "irqs", "interrupts",
@@ -820,23 +1222,84 @@ static bool is_known_builtin(const char *cmd) {
     return false;
 }
 
-static void execute_line(char *line) {
-    while (*line == ' ' || *line == '\t' || *line == '\r' || *line == '\n') {
-        line++;
+static void expand_variables(const char *src, char *dst, size_t cap) {
+    size_t out = 0;
+    for (size_t i = 0; src[i] && out + 1 < cap; ) {
+        if (src[i] == '~' && (i == 0 || src[i - 1] == ' ') &&
+            (src[i + 1] == '\0' || src[i + 1] == '/' || src[i + 1] == ' ')) {
+            const char *home = env_get("HOME");
+            size_t hlen = strlen(home);
+            for (size_t k = 0; k < hlen && out + 1 < cap; k++) dst[out++] = home[k];
+            i++;
+            continue;
+        }
+        if (src[i] == '$') {
+            i++;
+            if (src[i] == '?') {
+                char num[16];
+                snprintf(num, sizeof(num), "%d", g_last_status);
+                for (size_t k = 0; num[k] && out + 1 < cap; k++) dst[out++] = num[k];
+                i++;
+                continue;
+            }
+            if (src[i] == '$') {
+                char num[16];
+                snprintf(num, sizeof(num), "%d", (int)u_getpid());
+                for (size_t k = 0; num[k] && out + 1 < cap; k++) dst[out++] = num[k];
+                i++;
+                continue;
+            }
+            char key[32];
+            size_t klen = 0;
+            while ((src[i] >= 'A' && src[i] <= 'Z') ||
+                   (src[i] >= 'a' && src[i] <= 'z') ||
+                   (src[i] >= '0' && src[i] <= '9') || src[i] == '_') {
+                if (klen + 1 < sizeof(key)) key[klen++] = src[i];
+                i++;
+            }
+            key[klen] = '\0';
+            if (klen > 0) {
+                const char *val = env_get(key);
+                for (size_t k = 0; val[k] && out + 1 < cap; k++) dst[out++] = val[k];
+            } else {
+                dst[out++] = '$';
+            }
+            continue;
+        }
+        dst[out++] = src[i++];
     }
-    if (!*line || *line == '#') {
+    dst[out] = '\0';
+}
+
+static void execute_single_pipeline(char *raw_line) {
+    while (*raw_line == ' ' || *raw_line == '\t' || *raw_line == '\r' || *raw_line == '\n') {
+        raw_line++;
+    }
+    if (!*raw_line || *raw_line == '#') {
         return;
     }
 
-    /* Strip inline '#' comment outside double quotes */
-    bool q = false;
-    for (char *p = line; *p; p++) {
-        if (*p == '"') q = !q;
-        else if (*p == '#' && !q && (p == line || p[-1] == ' ' || p[-1] == '\t')) {
-            *p = '\0';
-            break;
+    char line[SH_LINE_MAX];
+    expand_variables(raw_line, line, sizeof(line));
+
+    /* Check for trailing '&' background job operator */
+    bool run_in_bg = false;
+    size_t llen = strlen(line);
+    while (llen > 0 && (line[llen - 1] == ' ' || line[llen - 1] == '\t' ||
+                        line[llen - 1] == '\r' || line[llen - 1] == '\n')) {
+        line[--llen] = '\0';
+    }
+    if (llen > 0 && line[llen - 1] == '&') {
+        run_in_bg = true;
+        line[--llen] = '\0';
+        while (llen > 0 && (line[llen - 1] == ' ' || line[llen - 1] == '\t')) {
+            line[--llen] = '\0';
         }
     }
+
+    char bg_cmd_copy[64];
+    strncpy(bg_cmd_copy, line, sizeof(bg_cmd_copy) - 1);
+    bg_cmd_copy[sizeof(bg_cmd_copy) - 1] = '\0';
 
     char *stage_strs[SH_MAX_STAGES];
     int nstages = 0;
@@ -863,12 +1326,12 @@ static void execute_line(char *line) {
         }
     }
 
-    if (nstages == 1 && is_stateful_builtin(stages[0].argv[0])) {
+    if (!run_in_bg && nstages == 1 && is_stateful_builtin(stages[0].argv[0])) {
         run_builtin(stages[0].argc, stages[0].argv, 0, 1);
         return;
     }
 
-    if (nstages == 1) {
+    if (!run_in_bg && nstages == 1) {
         struct stage *s = &stages[0];
         char exec_path[256];
         int in_fd = 0, out_fd = 1;
@@ -898,7 +1361,10 @@ static void execute_line(char *line) {
             bool handled = run_builtin(s->argc, s->argv, in_fd, out_fd);
             if (close_in) u_close(in_fd);
             if (close_out) u_close(out_fd);
-            if (handled) return;
+            if (handled) {
+                g_last_status = 0;
+                return;
+            }
         }
     }
 
@@ -979,11 +1445,78 @@ static void execute_line(char *line) {
 
     if (prev_read >= 0) u_close(prev_read);
 
+    if (run_in_bg && nspawned > 0) {
+        pid_t last_pid = pids[nspawned - 1];
+        int jid = g_next_job_id++;
+        for (int i = 0; i < SH_JOBS_MAX; i++) {
+            if (!g_jobs[i].used) {
+                g_jobs[i].used = true;
+                g_jobs[i].id   = jid;
+                g_jobs[i].pid  = last_pid;
+                strcpy(g_jobs[i].cmd, bg_cmd_copy);
+                break;
+            }
+        }
+        printf("[%d] %d\n", jid, last_pid);
+        g_last_status = 0;
+        return;
+    }
+
     for (int i = 0; i < nspawned; i++) {
         int st = 0;
         u_waitpid(pids[i], &st);
+        g_last_status = (st >> 8) & 0xFF;
     }
     u_tty_set_mode(TTY_MODE_CANON);
+}
+
+static void execute_line(char *line) {
+    while (*line == ' ' || *line == '\t' || *line == '\r' || *line == '\n') {
+        line++;
+    }
+    if (!*line || *line == '#') {
+        return;
+    }
+
+    /* Strip inline '#' comment outside double quotes */
+    bool q = false;
+    for (char *p = line; *p; p++) {
+        if (*p == '"') q = !q;
+        else if (*p == '#' && !q && (p == line || p[-1] == ' ' || p[-1] == '\t')) {
+            *p = '\0';
+            break;
+        }
+    }
+
+    /* Split chained commands on ';' and '&&' outside double quotes */
+    char *cur = line;
+    q = false;
+    while (*cur) {
+        char *p = cur;
+        int op = 0; /* 0=end, 1=';', 2='&&' */
+        while (*p) {
+            if (*p == '"') {
+                q = !q;
+            } else if (!q && *p == ';') {
+                *p = '\0';
+                op = 1;
+                p++;
+                break;
+            } else if (!q && p[0] == '&' && p[1] == '&') {
+                *p = '\0';
+                op = 2;
+                p += 2;
+                break;
+            }
+            p++;
+        }
+
+        execute_single_pipeline(cur);
+        if (op == 2 && g_last_status != 0) {
+            break;
+        }
+        cur = p;
+    }
 }
 
 /* ---------------- Interactive Line Editor & Tab Completion ---------------- */
@@ -1048,6 +1581,9 @@ static void handle_tab_completion(const char *cwd, char *buf, size_t *len_io, si
     if (is_cmd_tok && !has_slash) {
         static const char *const cmds[] = {
             "help", "tester", "bench", "diag", "audit", "memtest",
+            "dmesg", "lspci", "lsblk", "kconfig", "id", "su", "chmod",
+            "env", "printenv", "export", "unset", "find", "sort", "uniq",
+            "which", "jobs", "fg",
             "fetch", "neofetch", "top", "htop", "fm", "edit", "nano",
             "snake", "calc", "cal", "beep", "df", "mounts", "sync",
             "uname", "cpuinfo", "irqs", "interrupts",
@@ -1372,6 +1908,7 @@ static ssize_t sh_readline(const char *cwd, char *buf, size_t cap) {
 }
 
 int main(int argc, char **argv) {
+    env_init();
     if (argc > 1) {
         return run_script_file(argv[1]);
     }
@@ -1380,9 +1917,11 @@ int main(int argc, char **argv) {
     char cwd[256];
 
     for (;;) {
+        reap_bg_jobs(false);
         if (u_getcwd(cwd, sizeof(cwd)) <= 0) {
             strcpy(cwd, "/");
         }
+        env_set("PWD", cwd);
         print_prompt(cwd);
 
         ssize_t n = sh_readline(cwd, line, sizeof(line));

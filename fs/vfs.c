@@ -45,6 +45,11 @@ void vfs_init(void) {
     KASSERT(vfs_mkdir("/", "/bin", 0755) == 0);
     KASSERT(vfs_mkdir("/", "/etc", 0755) == 0);
     KASSERT(vfs_mkdir("/", "/disk", 0755) == 0);
+    KASSERT(vfs_mkdir("/", "/root", 0700) == 0);
+    KASSERT(vfs_mkdir("/", "/home", 0755) == 0);
+    KASSERT(vfs_mkdir("/", "/home/guest", 0755) == 0);
+    KASSERT(vfs_mkdir("/", "/var", 0755) == 0);
+    KASSERT(vfs_mkdir("/", "/var/log", 0755) == 0);
 
     KASSERT(vfs_mount("/dev", devfs_create_root()) == 0);
     KASSERT(vfs_mount("/proc", procfs_create_root()) == 0);
@@ -263,6 +268,14 @@ int vfs_rename(const char *cwd, const char *oldpath, const char *newpath) {
 
     rc = vfs_unlink(cwd, oldpath);
     return rc;
+}
+
+int vfs_chmod(const char *cwd, const char *path, uint32_t mode) {
+    struct vfs_node *node = NULL;
+    int rc = vfs_resolve(cwd, path, &node);
+    if (rc < 0) return rc;
+    node->mode = mode & 07777U;
+    return 0;
 }
 
 int vfs_stat_node(struct vfs_node *node, struct vfs_stat *st) {

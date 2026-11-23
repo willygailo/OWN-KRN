@@ -6,6 +6,7 @@
 #include <drivers/ata.h>
 #include <drivers/console.h>
 #include <drivers/keyboard.h>
+#include <drivers/pci.h>
 #include <drivers/rtc.h>
 #include <drivers/serial.h>
 #include <drivers/tty.h>
@@ -87,7 +88,8 @@ void kmain(uint64_t boot_magic, uint64_t boot_info_phys) {
     kheap_init();
     sched_init();
 
-    /* Virtual File System, persistent ATA0 disk & initramfs */
+    /* PCI Bus enumeration, Virtual File System, persistent ATA0 disk & initramfs */
+    pci_init();
     ata_init();
     vfs_init();
     if (g_boot_info.initrd_size > 0) {

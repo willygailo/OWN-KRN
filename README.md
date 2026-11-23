@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Display-1024x576x32%20VBE%20LFB-8b5cf6?style=for-the-badge&logo=linux&logoColor=white" alt="1024x576x32 VBE LFB" />
   <img src="https://img.shields.io/badge/Host%20OS-Linux%20%7C%20macOS%20%7C%20Windows-2563eb?style=for-the-badge&logo=githubactions&logoColor=white" alt="Linux | macOS | Windows" />
   <img src="https://img.shields.io/badge/Security-W%5EX%20%2B%20SMEP%20%2B%20Ring%203-f59e0b?style=for-the-badge&logo=shield&logoColor=white" alt="W^X + SMEP + Ring 3" />
-  <img src="https://img.shields.io/badge/QEMU%20Tests-58%2F58%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
+  <img src="https://img.shields.io/badge/QEMU%20Tests-68%2F68%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
 </p>
 
 <p>
@@ -153,30 +153,34 @@ flowchart LR
 
 | Category | Commands |
 | :--- | :--- |
+| 🐧 **Linux Kernel & Kconfig** | `dmesg [-c]` (`[    0.000000]` kernel ring buffer `/proc/kmsg`), `lspci` (`/proc/pci`), `lsblk` (`/proc/partitions`), `kconfig` (`/proc/config`), plus `make defconfig` & interactive `make menuconfig` |
 | 🧪 **Diagnostics & Benchmark** | `tester` / `bench` / `diag` / `memtest` (interactive 6-suite TUI testbench; `tester -b` batch mode; auto-exports report to `/disk/test_report.txt`) |
 | 🖥️ **Interactive TUI Apps** | `fetch` / `neofetch` (ASCII OS logo & live telemetry), `top` / `htop` (real-time task & memory monitor with `[k]` kill), `fm [dir]` (dual-pane file manager), `edit <file>` / `nano` (full-screen text editor), `snake` (playable arcade game) |
 | 💾 **Persistent Disk (`/disk`)** | Backed by `drivers/ata.c` (28-bit LBA PIO on `build/disk.img`): `df` / `mounts` (`/proc/mounts`), `sync`, plus persistent file read/write in `/disk/*` that survives OS reboots |
-| ⌨️ **Shell Line Editor** | **Up/Down** command history (`history`), **Left/Right/Home/End/Del** cursor line editing, **Tab** auto-completion (commands + VFS paths), `Ctrl+L` clear, `Ctrl+U`/`Ctrl+W` line/word kill |
-| 📁 **Filesystem & Scripts** | `ls [-l] [dir]` / `ll`, `tree [dir]`, `stat <path>`, `cp <src> <dst>`, `mv <src> <dst>`, `head [-n N]`, `tail [-n N]`, `sh <script.sh>` / `source`, `cd`, `pwd`, `cat`, `mkdir`, `touch`, `rm` |
+| ⌨️ **Bash-Like Shell & Jobs** | `$VAR` / `$?` / `$$` / `~` expansion, `export KEY=VAL`, `unset`, `env`, `;` and `&&` chaining, background jobs (`cmd &`, `jobs`, `fg`), **Up/Down** history, **Tab** completion |
+| 👤 **Users & Permissions** | `id` (`uid`/`gid`), `su [root\|guest]` (multi-user credential switch), `chmod <octal> <path>`, `/etc/passwd`, `/etc/group`, `/etc/os-release` |
+| 📁 **Filesystem & Coreutils** | `ls [-l] [dir]` / `ll`, `tree [dir]`, `find [dir] [-name pat]`, `sort`, `uniq`, `which`, `stat`, `cp`, `mv`, `head`, `tail`, `sh <script.sh>`, `cd`, `pwd`, `cat`, `mkdir`, `touch`, `rm` |
 | 🧮 **Utilities & Audio** | `calc <a op b>` (dec/hex arithmetic & bitwise calculator), `cal [month] [year]` (monthly calendar with RTC highlight), `beep [hz] [ms]` (PIT Ch2 PC Speaker audio via `/dev/speaker`) |
 | 🔀 **Pipelines & I/O** | Full multi-stage pipelines (`ps \| grep U3`, `cat /etc/motd \| wc`) + `<`, `>`, `>>` for both built-ins & ELF64 binaries |
-| 📊 **System & Hardware Info** | `uname [-a]`, `cpuinfo` (`/proc/cpuinfo`), `irqs` (`/proc/interrupts`), `ps` (`/proc/tasks`), `free` (`/proc/meminfo`), `uptime` (`/proc/uptime`), `date` (`/proc/rtc`) |
+| 📊 **System & Hardware Info** | `uname [-a\|-r\|-s\|-m]`, `cpuinfo` (`/proc/cpuinfo`), `irqs` (`/proc/interrupts`), `ps` (`/proc/tasks`), `free` (`/proc/meminfo`), `uptime` (`/proc/uptime`), `date` (`/proc/rtc`) |
 | ⚡ **Ring 3 ELF64 Apps** | `tester`, `fetch`, `top`, `fm`, `edit`, `snake`, `hello [name]`, `grep <pat> [file]`, `wc [file]`, `hexdump [file]`, `date`, `sleep <ms>`, `selftest`, `faulttest` |
 | 🔌 **Control** | `help`, `kill <pid> [sig]`, `clear` (ANSI + VBE LFB), `reboot`, `halt` / `poweroff`, `exit` |
 
 <details>
-<summary>📡 <b>View Linux-Compatible x86_64 Syscall Table (30 Syscalls)</b></summary>
+<summary>📡 <b>View Linux-Compatible x86_64 Syscall Table (39 Syscalls)</b></summary>
 
 | `#` | Syscall | `#` | Syscall | `#` | Syscall | `#` | Syscall |
 | :---: | :--- | :---: | :--- | :---: | :--- | :---: | :--- |
-| `0` | `read` | `12` | `brk` | `57` | `fork` | `79` | `getcwd` |
-| `1` | `write` | `16` | `ioctl` | `59` | `execve` | `80` | `chdir` |
-| `2` | `open` | `22` | `pipe` | `60` | `exit` | `82` | `rename` |
-| `3` | `close` | `24` | `sched_yield` | `61` | `wait4` | `83` | `mkdir` |
-| `4` | `stat` | `32` | `dup` | `62` | `kill` | `87` | `unlink` |
-| `5` | `fstat` | `33` | `dup2` | `63` | `uname` | `110` | `getppid` |
-| `8` | `lseek` | `35` | `nanosleep` | `78` | `getdents` | `169` | `reboot` |
-| — | — | `39` | `getpid` | — | — | `228` | `clock_gettime` |
+| `0` | `read` | `16` | `ioctl` | `60` | `exit` | `90` | `chmod` |
+| `1` | `write` | `22` | `pipe` | `61` | `wait4` | `102` | `getuid` |
+| `2` | `open` | `24` | `sched_yield` | `62` | `kill` | `104` | `getgid` |
+| `3` | `close` | `32` | `dup` | `63` | `uname` | `105` | `setuid` |
+| `4` | `stat` | `33` | `dup2` | `78` | `getdents` | `106` | `setgid` |
+| `5` | `fstat` | `35` | `nanosleep` | `79` | `getcwd` | `107` | `geteuid` |
+| `8` | `lseek` | `39` | `getpid` | `80` | `chdir` | `108` | `getegid` |
+| `9` | `mmap` | `57` | `fork` | `82` | `rename` | `110` | `getppid` |
+| `11` | `munmap` | `59` | `execve` | `83` | `mkdir` | `169` | `reboot` |
+| `12` | `brk` | — | — | `87` | `unlink` | `228` | `clock_gettime` |
 
 </details>
 

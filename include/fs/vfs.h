@@ -91,6 +91,7 @@ int              vfs_resolve_parent(const char *cwd, const char *path,
 int              vfs_mkdir(const char *cwd, const char *path, uint32_t mode);
 int              vfs_unlink(const char *cwd, const char *path);
 int              vfs_rename(const char *cwd, const char *oldpath, const char *newpath);
+int              vfs_chmod(const char *cwd, const char *path, uint32_t mode);
 int              vfs_stat_path(const char *cwd, const char *path, struct vfs_stat *st);
 int              vfs_stat_node(struct vfs_node *node, struct vfs_stat *st);
 

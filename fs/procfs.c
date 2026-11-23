@@ -2,9 +2,12 @@
 #include <arch/io.h>
 #include <arch/pit.h>
 #include <drivers/ata.h>
+#include <drivers/pci.h>
 #include <drivers/rtc.h>
 #include <fs/vfs.h>
+#include <generated/autoconf.h>
 #include <kernel/errno.h>
+#include <kernel/printk.h>
 #include <kernel/sched.h>
 #include <lib/printf.h>
 #include <lib/string.h>
@@ -20,6 +23,11 @@ enum proc_kind {
     PROC_CPUINFO    = 6,
     PROC_INTERRUPTS = 7,
     PROC_MOUNTS     = 8,
+    PROC_KMSG       = 9,
+    PROC_PCI        = 10,
+    PROC_PARTITIONS = 11,
+    PROC_CMDLINE    = 12,
+    PROC_CONFIG     = 13,
 };
 
 struct proc_entry {
@@ -27,7 +35,7 @@ struct proc_entry {
     struct vfs_node *node;
 };
 
-static struct proc_entry g_procs[8];
+static struct proc_entry g_procs[13];
 static struct vfs_node  *g_proc_root = NULL;
 
 static const char *task_state_str(enum task_state st) {
@@ -89,7 +97,7 @@ static size_t format_proc_content(enum proc_kind kind, char *buf, size_t cap) {
     switch (kind) {
         case PROC_VERSION:
             return (size_t)snprintf(buf, cap,
-                "OwnKrn 0.3.0-x86_64 (freestanding C11 + NASM, higher-half VBE LFB)\n");
+                "Linux-compatible OwnKrn version 0.3.0-x86_64 (root@ownkrn) (gcc C11 + NASM) #1 SMP PREEMPT\n");
         case PROC_MEMINFO: {
             struct pmm_stats ps;
             struct kheap_stats hs;
@@ -172,16 +180,36 @@ static size_t format_proc_content(enum proc_kind kind, char *buf, size_t cap) {
                 (unsigned long long)hs.mapped_bytes,
                 dused, dtot, dfiles, dmax);
         }
+        case PROC_KMSG:
+            return printk_read_kmsg(buf, cap);
+        case PROC_PCI:
+            return pci_format_proc(buf, cap);
+        case PROC_PARTITIONS: {
+            uint32_t secs = ata_sector_count();
+            return (size_t)snprintf(buf, cap,
+                "NAME   MAJ:MIN   BLOCKS   SIZE     TYPE   MOUNTPOINT\n"
+                "ram0     1:0        920   920 KiB  rom    / (initramfs)\n"
+                "hda      3:0       %4u   %4u KiB disk   /disk (ATA0 LBA)\n",
+                (secs * 512U) / 1024U,
+                (secs * 512U) / 1024U);
+        }
+        case PROC_CMDLINE:
+            return (size_t)snprintf(buf, cap,
+                "BOOT_IMAGE=/boot/kernel.elf root=/dev/ram0 rw console=tty0 console=ttyS0,115200n8\n");
+        case PROC_CONFIG:
+            return (size_t)snprintf(buf, cap, "%s", OWNKRN_IKCONFIG_TEXT);
         default:
             return 0;
     }
 }
 
 static ssize_t proc_read(struct vfs_node *node, void *buf, size_t len, size_t offset) {
-    char tmp[2048];
+    char *tmp = kmalloc(16384);
+    if (!tmp) return -ENOMEM;
     size_t total = format_proc_content((enum proc_kind)(uintptr_t)node->priv,
-                                       tmp, sizeof(tmp));
+                                       tmp, 16384);
     if (offset >= total) {
+        kfree(tmp);
         return 0;
     }
     size_t avail = total - offset;
@@ -189,6 +217,7 @@ static ssize_t proc_read(struct vfs_node *node, void *buf, size_t len, size_t of
         len = avail;
     }
     memcpy(buf, tmp + offset, len);
+    kfree(tmp);
     return (ssize_t)len;
 }
 
@@ -256,14 +285,19 @@ struct vfs_node *procfs_create_root(void) {
     g_proc_root->ops      = &proc_dir_ops;
     g_proc_root->parent   = g_proc_root;
 
-    g_procs[0] = (struct proc_entry){ "version",    make_proc(2001, PROC_VERSION,    g_proc_root) };
-    g_procs[1] = (struct proc_entry){ "meminfo",    make_proc(2002, PROC_MEMINFO,    g_proc_root) };
-    g_procs[2] = (struct proc_entry){ "uptime",     make_proc(2003, PROC_UPTIME,     g_proc_root) };
-    g_procs[3] = (struct proc_entry){ "tasks",      make_proc(2004, PROC_TASKS,      g_proc_root) };
-    g_procs[4] = (struct proc_entry){ "rtc",        make_proc(2005, PROC_RTC,        g_proc_root) };
-    g_procs[5] = (struct proc_entry){ "cpuinfo",    make_proc(2006, PROC_CPUINFO,    g_proc_root) };
-    g_procs[6] = (struct proc_entry){ "interrupts", make_proc(2007, PROC_INTERRUPTS, g_proc_root) };
-    g_procs[7] = (struct proc_entry){ "mounts",     make_proc(2008, PROC_MOUNTS,     g_proc_root) };
+    g_procs[0]  = (struct proc_entry){ "version",    make_proc(2001, PROC_VERSION,    g_proc_root) };
+    g_procs[1]  = (struct proc_entry){ "meminfo",    make_proc(2002, PROC_MEMINFO,    g_proc_root) };
+    g_procs[2]  = (struct proc_entry){ "uptime",     make_proc(2003, PROC_UPTIME,     g_proc_root) };
+    g_procs[3]  = (struct proc_entry){ "tasks",      make_proc(2004, PROC_TASKS,      g_proc_root) };
+    g_procs[4]  = (struct proc_entry){ "rtc",        make_proc(2005, PROC_RTC,        g_proc_root) };
+    g_procs[5]  = (struct proc_entry){ "cpuinfo",    make_proc(2006, PROC_CPUINFO,    g_proc_root) };
+    g_procs[6]  = (struct proc_entry){ "interrupts", make_proc(2007, PROC_INTERRUPTS, g_proc_root) };
+    g_procs[7]  = (struct proc_entry){ "mounts",     make_proc(2008, PROC_MOUNTS,     g_proc_root) };
+    g_procs[8]  = (struct proc_entry){ "kmsg",       make_proc(2009, PROC_KMSG,       g_proc_root) };
+    g_procs[9]  = (struct proc_entry){ "pci",        make_proc(2010, PROC_PCI,        g_proc_root) };
+    g_procs[10] = (struct proc_entry){ "partitions", make_proc(2011, PROC_PARTITIONS, g_proc_root) };
+    g_procs[11] = (struct proc_entry){ "cmdline",    make_proc(2012, PROC_CMDLINE,    g_proc_root) };
+    g_procs[12] = (struct proc_entry){ "config",     make_proc(2013, PROC_CONFIG,     g_proc_root) };
 
     return g_proc_root;
 }

@@ -244,8 +244,11 @@ static int64_t sys_fork(struct interrupt_frame *parent_frame) {
         return -ENOMEM;
     }
 
+    child->uid            = parent->uid;
+    child->gid            = parent->gid;
     child->user_brk_start = parent->user_brk_start;
     child->user_brk_curr  = parent->user_brk_curr;
+    child->mmap_next      = parent->mmap_next;
     strcpy(child->cwd, parent->cwd);
     vfs_task_clone_fds(child, parent);
 
@@ -334,6 +337,7 @@ static int64_t sys_execve(struct interrupt_frame *frame, uint64_t upath, uint64_
     cur->cr3            = res.cr3;
     cur->user_brk_start = res.brk_start;
     cur->user_brk_curr  = res.brk_start;
+    cur->mmap_next      = 0x0000400000000000ULL;
     vmm_switch(res.cr3);
     irq_enable();
 
@@ -454,6 +458,72 @@ static int64_t sys_rename(uint64_t uold, uint64_t unew) {
     return vfs_rename(sched_current()->cwd, oldpath, newpath);
 }
 
+static int64_t sys_chmod(uint64_t upath, uint32_t mode) {
+    char path[VFS_PATH_MAX];
+    int rc = copy_str_from_user(path, upath, sizeof(path));
+    if (rc < 0) return rc;
+    return vfs_chmod(sched_current()->cwd, path, mode);
+}
+
+static int64_t sys_mmap(uint64_t addr, size_t len, uint32_t prot, uint32_t flags) {
+    (void)flags;
+    if (len == 0 || len > 16ULL * 1024ULL * 1024ULL) {
+        return -EINVAL;
+    }
+    struct task *cur = sched_current();
+    size_t aligned_len = ALIGN_UP(len, PAGE_SIZE);
+    uint64_t base = cur->mmap_next;
+    if (base < 0x0000400000000000ULL) {
+        base = 0x0000400000000000ULL;
+    }
+    if (addr >= 0x0000100000000000ULL &&
+        addr + aligned_len < USER_STACK_TOP - USER_STACK_PAGES * PAGE_SIZE - PAGE_SIZE) {
+        base = ALIGN_UP(addr, PAGE_SIZE);
+    }
+
+    uint64_t pte_flags = PTE_PRESENT | PTE_USER;
+    if (prot & PROT_WRITE) pte_flags |= PTE_WRITABLE;
+    if (!(prot & PROT_EXEC)) pte_flags |= PTE_NX;
+
+    for (size_t off = 0; off < aligned_len; off += PAGE_SIZE) {
+        uint64_t pa = pmm_alloc_frame();
+        if (!pa || !vmm_map_page(cur->cr3, base + off, pa, pte_flags)) {
+            if (pa) pmm_free_frame(pa);
+            for (size_t un = 0; un < off; un += PAGE_SIZE) {
+                uint64_t old_pa = 0;
+                if (vmm_unmap_page(cur->cr3, base + un, &old_pa)) {
+                    pmm_free_frame(old_pa);
+                }
+            }
+            return -ENOMEM;
+        }
+        memset(PHYS_TO_VIRT(pa), 0, PAGE_SIZE);
+    }
+
+    if (base + aligned_len > cur->mmap_next) {
+        cur->mmap_next = base + aligned_len + PAGE_SIZE;
+    }
+    return (int64_t)base;
+}
+
+static int64_t sys_munmap(uint64_t addr, size_t len) {
+    if (len == 0 || (addr & (PAGE_SIZE - 1)) != 0) {
+        return -EINVAL;
+    }
+    if (addr < PAGE_SIZE || addr > USER_VIRT_MAX) {
+        return -EINVAL;
+    }
+    struct task *cur = sched_current();
+    size_t aligned_len = ALIGN_UP(len, PAGE_SIZE);
+    for (size_t off = 0; off < aligned_len; off += PAGE_SIZE) {
+        uint64_t pa = 0;
+        if (vmm_unmap_page(cur->cr3, addr + off, &pa)) {
+            pmm_free_frame(pa);
+        }
+    }
+    return 0;
+}
+
 static int64_t sys_nanosleep(uint64_t utsp) {
     struct timespec ts;
     int rc = copy_from_user(&ts, utsp, sizeof(ts));
@@ -497,6 +567,10 @@ static int64_t sys_ioctl(int fd, uint64_t req, uint64_t arg) {
         tty_set_mode((uint32_t)arg);
         return 0;
     }
+    if (req == OWNKRN_TIOCCLRKMSG) {
+        printk_clear_kmsg();
+        return 0;
+    }
     return -EINVAL;
 }
 
@@ -506,6 +580,7 @@ int64_t syscall_dispatch(struct interrupt_frame *f) {
     uint64_t a1 = f->rdi;
     uint64_t a2 = f->rsi;
     uint64_t a3 = f->rdx;
+    uint64_t a4 = f->r10;
 
     int64_t ret;
     switch (nr) {
@@ -516,6 +591,8 @@ int64_t syscall_dispatch(struct interrupt_frame *f) {
         case SYS_stat:          ret = sys_stat(a1, a2); break;
         case SYS_fstat:         ret = sys_fstat((int)a1, a2); break;
         case SYS_lseek:         ret = vfs_lseek(sched_current(), (int)a1, (off_t)a2, (int)a3); break;
+        case SYS_mmap:          ret = sys_mmap(a1, (size_t)a2, (uint32_t)a3, (uint32_t)a4); break;
+        case SYS_munmap:        ret = sys_munmap(a1, (size_t)a2); break;
         case SYS_brk:           ret = sys_brk(a1); break;
         case SYS_ioctl:         ret = sys_ioctl((int)a1, a2, a3); break;
         case SYS_pipe:          ret = sys_pipe(a1); break;
@@ -537,6 +614,13 @@ int64_t syscall_dispatch(struct interrupt_frame *f) {
         case SYS_rename:        ret = sys_rename(a1, a2); break;
         case SYS_mkdir:         ret = sys_mkdir(a1, (uint32_t)a2); break;
         case SYS_unlink:        ret = sys_unlink(a1); break;
+        case SYS_chmod:         ret = sys_chmod(a1, (uint32_t)a2); break;
+        case SYS_getuid:
+        case SYS_geteuid:       ret = (int64_t)sched_current()->uid; break;
+        case SYS_getgid:
+        case SYS_getegid:       ret = (int64_t)sched_current()->gid; break;
+        case SYS_setuid:        sched_current()->uid = (uint32_t)a1; ret = 0; break;
+        case SYS_setgid:        sched_current()->gid = (uint32_t)a1; ret = 0; break;
         case SYS_clock_gettime: ret = sys_clock_gettime((int)a1, a2); break;
         case SYS_reboot:
             if (a1 == OWNKRN_CMD_REBOOT) {

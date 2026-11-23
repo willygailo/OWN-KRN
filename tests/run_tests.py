@@ -178,6 +178,41 @@ def main() -> None:
         expect(out, "IRQ0 (PIC1)", "/proc/interrupts reports PIT IRQ0 counter")
         expect(out, "SYSCALL (LSTAR)", "/proc/interrupts reports SYSCALL counter")
 
+        out = send_cmd("dmesg")
+        expect(out, "0.0", "dmesg prints timestamped [    0.000000] kernel ring buffer")
+
+        out = send_cmd("lspci")
+        expect(out, "1234:1111", "lspci enumerates QEMU Bochs VBE PCI adapter")
+
+        out = send_cmd("lsblk")
+        expect(out, "hda", "lsblk reports ATA0 persistent block device")
+
+        out = send_cmd("kconfig")
+        expect(out, "CONFIG_64BIT=y", "kconfig (/proc/config) exposes active Kconfig")
+
+        out = send_cmd("cat /etc/os-release")
+        expect(out, "ID_LIKE=linux", "/etc/os-release Linux distribution metadata")
+
+        out = send_cmd("id")
+        expect(out, "uid=0(root)", "id reports uid=0(root) credentials")
+
+        out = send_cmd("su guest && id && su root")
+        expect(out, "uid=1000(guest)", "su guest switches UID/GID & '&&' chaining works")
+
+        out = send_cmd("export MYVAR=linuxkernel ; echo $MYVAR $USER")
+        expect(out, "linuxkernel root", "export + ';' chaining + $VAR expansion")
+
+        out = send_cmd("which fetch")
+        expect(out, "/bin/fetch", "which locates /bin/fetch executable")
+
+        out = send_cmd("find /etc -name *release")
+        expect(out, "/etc/os-release", "find -name wildcard search in /etc")
+
+        out = send_cmd("sleep 50 &")
+        expect(out, "[1]", "background job launch with '&'")
+        out = send_cmd("fg")
+        expect(out, "sleep 50", "fg brings background job to foreground")
+
         out = send_cmd("date")
         expect(out, "UTC (epoch=", "CMOS RTC date command & /proc/rtc")
 
@@ -269,7 +304,7 @@ def main() -> None:
             raise AssertionError(f"QEMU exited with non-zero status {rc}")
 
         print("  [PASS] Clean ACPI poweroff (exit code 0)")
-        print("\nALL 58 OWNKRN v0.3 CROSS-PLATFORM END-TO-END TESTS PASSED!")
+        print("\nALL 68 OWNKRN v0.4 LINUX-PARITY END-TO-END TESTS PASSED!")
     finally:
         if proc.poll() is None:
             proc.kill()

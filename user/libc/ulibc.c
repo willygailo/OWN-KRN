@@ -30,6 +30,16 @@ off_t u_lseek(int fd, off_t off, int whence) {
     return (off_t)u_syscall(SYS_lseek, (uint64_t)fd, (uint64_t)off, (uint64_t)whence, 0, 0, 0);
 }
 
+void *u_mmap(void *addr, size_t len, uint32_t prot, uint32_t flags) {
+    int64_t r = u_syscall(SYS_mmap, (uint64_t)(uintptr_t)addr, len, prot, flags, 0, 0);
+    if (r < 0) return (void *)-1;
+    return (void *)(uintptr_t)r;
+}
+
+int u_munmap(void *addr, size_t len) {
+    return (int)u_syscall(SYS_munmap, (uint64_t)(uintptr_t)addr, len, 0, 0, 0, 0);
+}
+
 void *u_sbrk(intptr_t inc) {
     uint64_t cur = (uint64_t)u_syscall(SYS_brk, 0, 0, 0, 0, 0, 0);
     if (inc == 0) {
@@ -123,6 +133,30 @@ int u_mkdir(const char *path, uint32_t mode) {
 
 int u_unlink(const char *path) {
     return (int)u_syscall(SYS_unlink, (uint64_t)(uintptr_t)path, 0, 0, 0, 0, 0);
+}
+
+int u_chmod(const char *path, uint32_t mode) {
+    return (int)u_syscall(SYS_chmod, (uint64_t)(uintptr_t)path, mode, 0, 0, 0, 0);
+}
+
+uint32_t u_getuid(void) {
+    return (uint32_t)u_syscall(SYS_getuid, 0, 0, 0, 0, 0, 0);
+}
+
+uint32_t u_getgid(void) {
+    return (uint32_t)u_syscall(SYS_getgid, 0, 0, 0, 0, 0, 0);
+}
+
+int u_setuid(uint32_t uid) {
+    return (int)u_syscall(SYS_setuid, uid, 0, 0, 0, 0, 0);
+}
+
+int u_setgid(uint32_t gid) {
+    return (int)u_syscall(SYS_setgid, gid, 0, 0, 0, 0, 0);
+}
+
+int u_kmsg_clear(void) {
+    return u_ioctl(0, OWNKRN_TIOCCLRKMSG, 0);
 }
 
 int u_msleep(uint64_t ms) {

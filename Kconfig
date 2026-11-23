@@ -1,0 +1,93 @@
+#
+# OwnKrn x86_64 Linux-Compatible Kernel Configuration (Kconfig)
+#
+
+mainmenu "OwnKrn/x86_64 0.4.0 Kernel Configuration"
+
+menu "General Setup"
+config LOCALVERSION
+    string "Local version - append to kernel release"
+    default "-ownkrn"
+
+config DEFAULT_HOSTNAME
+    string "Default hostname"
+    default "ownkrn"
+
+config IKCONFIG_PROC
+    bool "Enable access to .config through /proc/config"
+    default y
+
+config PRINTK_RINGBUF_KB
+    int "Kernel log ring buffer size in KiB (dmesg / /proc/kmsg)"
+    default 16
+endmenu
+
+menu "Processor Type and Features"
+config 64BIT
+    bool "64-bit kernel (x86_64 Long Mode)"
+    default y
+
+config SMP
+    bool "Symmetric multi-processing support"
+    default y
+
+config PREEMPT
+    bool "Preemptive round-robin task scheduler"
+    default y
+
+config HZ
+    int "Timer interrupt frequency (PIT Hz)"
+    default 100
+
+config X86_SMEP
+    bool "Supervisor Mode Execution Prevention (CR4.SMEP)"
+    default y
+
+config STRICT_KERNEL_RWX
+    bool "Make kernel text and rodata read-only / W^X enforced"
+    default y
+endmenu
+
+menu "Device Drivers"
+config PCI
+    bool "PCI Bus 0..255 hardware enumeration (/proc/pci & lspci)"
+    default y
+
+config FB_VBE
+    bool "Bochs VBE 32-bit Linear Framebuffer (1024x576x32)"
+    default y
+
+config ATA_PIO
+    bool "ATA PIO 28-bit LBA Primary Master disk driver"
+    default y
+
+config PC_SPEAKER
+    bool "PIT Channel 2 PC Speaker audio driver (/dev/speaker)"
+    default y
+
+config RTC_CMOS
+    bool "PC CMOS Real-Time Clock wall clock (/proc/rtc)"
+    default y
+
+config SERIAL_8250
+    bool "8250/16550 COM1 UART serial console"
+    default y
+endmenu
+
+menu "File Systems"
+config TMPFS
+    bool "In-memory tmpfs root filesystem"
+    default y
+
+config DISKFS
+    bool "Persistent ATA0 DiskFS mounted at /disk"
+    default y
+
+config PROC_FS
+    bool "/proc process & kernel telemetry filesystem"
+    default y
+
+config DEVTMPFS
+    bool "/dev character device filesystem"
+    default y
+endmenu

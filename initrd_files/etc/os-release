@@ -1,0 +1,7 @@
+NAME="OwnKrn Linux"
+VERSION="0.4.0-x86_64 (Higher-Half Long Mode)"
+ID=ownkrn
+ID_LIKE=linux
+VERSION_ID="0.4.0"
+PRETTY_NAME="OwnKrn Linux-Compatible OS 0.4.0 (x86_64)"
+HOME_URL="https://github.com/willygailo/OWN-KRN"

@@ -110,6 +110,9 @@ struct task *sched_alloc_task(const char *name, pid_t ppid, uint64_t cr3, bool i
     slot->state     = TASK_BLOCKED;
     slot->cr3       = cr3 ? cr3 : vmm_kernel_pml4();
     slot->is_user   = is_user;
+    slot->uid       = 0;
+    slot->gid       = 0;
+    slot->mmap_next = 0x0000400000000000ULL;
     slot->slice_rem = SCHED_QUANTUM_TICKS;
     strncpy(slot->name, name ? name : "task", sizeof(slot->name) - 1);
     strcpy(slot->cwd, "/");

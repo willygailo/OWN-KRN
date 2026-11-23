@@ -50,8 +50,11 @@ struct task {
     uint64_t        cr3;
 
     bool            is_user;
+    uint32_t        uid;
+    uint32_t        gid;
     uint64_t        user_brk_start;
     uint64_t        user_brk_curr;
+    uint64_t        mmap_next;
 
     uint64_t        wake_tick;
     uint64_t        ticks_used;

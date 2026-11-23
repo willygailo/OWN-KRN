@@ -11,6 +11,8 @@
 #define SYS_stat          4
 #define SYS_fstat         5
 #define SYS_lseek         8
+#define SYS_mmap          9
+#define SYS_munmap        11
 #define SYS_brk           12
 #define SYS_ioctl         16
 #define SYS_pipe          22
@@ -31,6 +33,13 @@
 #define SYS_rename        82
 #define SYS_mkdir         83
 #define SYS_unlink        87
+#define SYS_chmod         90
+#define SYS_getuid        102
+#define SYS_getgid        104
+#define SYS_setuid        105
+#define SYS_setgid        106
+#define SYS_geteuid       107
+#define SYS_getegid       108
 #define SYS_getppid       110
 #define SYS_reboot        169
 #define SYS_clock_gettime 228
@@ -63,10 +72,18 @@
 /* TTY ioctl commands & mode flags */
 #define OWNKRN_TIOCGETM     0x5401U
 #define OWNKRN_TIOCSETM     0x5402U
+#define OWNKRN_TIOCCLRKMSG  0x5403U
 
 #define TTY_MODE_CANON      0x00U
 #define TTY_MODE_RAW        0x01U
 #define TTY_MODE_NONBLOCK   0x02U
+
+/* mmap protection & flags */
+#define PROT_READ           0x1U
+#define PROT_WRITE          0x2U
+#define PROT_EXEC           0x4U
+#define MAP_PRIVATE         0x02U
+#define MAP_ANONYMOUS       0x20U
 
 struct utsname {
     char sysname[65];

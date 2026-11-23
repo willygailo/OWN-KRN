@@ -128,7 +128,19 @@ int main(int argc, char **argv) {
     u_close(rn_fd);
     check(u_rename("/tmp/ren_src.txt", "/tmp/ren_dst.txt") == 0, "SYS_rename");
     check(u_stat("/tmp/ren_src.txt", &st) < 0 && u_stat("/tmp/ren_dst.txt", &st) == 0, "renamed file stat");
+    check(u_chmod("/tmp/ren_dst.txt", 0700) == 0, "SYS_chmod 0700");
+    check(u_stat("/tmp/ren_dst.txt", &st) == 0 && st.mode == 0700, "stat verifies chmod 0700");
     check(u_unlink("/tmp/ren_dst.txt") == 0, "cleanup renamed file");
+
+    /* 9. SYS_mmap + SYS_munmap + UID/GID credentials */
+    uint8_t *mp = (uint8_t *)u_mmap(NULL, 8192, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS);
+    check(mp != (uint8_t *)-1 && mp != NULL, "SYS_mmap 8192 bytes");
+    mp[0] = 0xA5;
+    mp[8191] = 0x5A;
+    check(mp[0] == 0xA5 && mp[8191] == 0x5A, "mmap page read/write");
+    check(u_munmap(mp, 8192) == 0, "SYS_munmap 8192 bytes");
+
+    check(u_getuid() == 0 && u_getgid() == 0, "initial root uid=0 gid=0");
 
     struct utsname u;
     check(u_uname(&u) == 0, "uname syscall");
