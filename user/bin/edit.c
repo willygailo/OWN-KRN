@@ -1,9 +1,9 @@
 #include <ulibc.h>
 
-#define EDIT_MAX_LINES 512
-#define EDIT_MAX_COLS  120
+#define EDIT_MAX_LINES 600
+#define EDIT_MAX_COLS  256
 #define VIEW_ROWS      28
-#define CLIP_BUF_MAX   8192
+#define CLIP_BUF_MAX   16384
 
 enum file_type {
     FTYPE_TEXT   = 0,
@@ -96,11 +96,11 @@ static void sync_clip_to_dev(void) {
 }
 
 static size_t sync_clip_from_dev(void) {
+    static char tmp[CLIP_BUF_MAX];
     int fd = u_open("/dev/clipboard", UAPI_O_RDONLY, 0);
     if (fd < 0) {
         return strlen(g_clip);
     }
-    char tmp[CLIP_BUF_MAX];
     size_t total = 0;
     while (total + 1 < sizeof(tmp)) {
         ssize_t n = u_read(fd, tmp + total, sizeof(tmp) - 1 - total);
@@ -170,6 +170,7 @@ static void load_file(const char *path) {
 }
 
 static void save_file(void) {
+    static char outbuf[4096];
     uint32_t mode = has_exec_extension(g_filepath) ? 0755U : 0644U;
     int fd = u_open(g_filepath, UAPI_O_CREAT | UAPI_O_WRONLY | UAPI_O_TRUNC, mode);
     if (fd < 0) {
@@ -179,16 +180,28 @@ static void save_file(void) {
     }
 
     size_t total = 0;
+    size_t bpos = 0;
     for (int i = 0; i < g_num_lines; i++) {
         size_t l = strlen(g_lines[i]);
+        bool add_nl = (i + 1 < g_num_lines || l > 0);
+        if (bpos + l + 1 > sizeof(outbuf)) {
+            if (bpos > 0) {
+                u_write(fd, outbuf, bpos);
+                bpos = 0;
+            }
+        }
         if (l > 0) {
-            u_write(fd, g_lines[i], l);
+            memcpy(outbuf + bpos, g_lines[i], l);
+            bpos += l;
             total += l;
         }
-        if (i + 1 < g_num_lines || l > 0) {
-            u_write(fd, "\n", 1);
+        if (add_nl) {
+            outbuf[bpos++] = '\n';
             total += 1;
         }
+    }
+    if (bpos > 0) {
+        u_write(fd, outbuf, bpos);
     }
     u_close(fd);
     if (has_exec_extension(g_filepath)) {
@@ -594,7 +607,7 @@ static void paste_clipboard(void) {
     size_t len = sync_clip_from_dev();
     if (len == 0) {
         snprintf(g_status, sizeof(g_status),
-                 "Clipboard is empty! Copy text on Host OS or press Ctrl+C first");
+                 "Clipboard empty! Click 'Sync Clipboard' bar, or press Ctrl+C first");
         return;
     }
 

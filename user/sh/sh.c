@@ -903,7 +903,14 @@ static int py_eval_atom(const char *tok) {
     if ((*tok >= '0' && *tok <= '9') || *tok == '-') {
         return atoi(tok);
     }
-    const char *v = env_get(tok);
+    char clean[32];
+    size_t cl = 0;
+    while (tok[cl] && tok[cl] != ' ' && tok[cl] != '\t' && tok[cl] != '\r' && cl + 1 < sizeof(clean)) {
+        clean[cl] = tok[cl];
+        cl++;
+    }
+    clean[cl] = '\0';
+    const char *v = env_get(clean);
     if (v && v[0]) {
         return atoi(v);
     }

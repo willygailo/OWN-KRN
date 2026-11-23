@@ -10,6 +10,99 @@ import sys
 import threading
 import time
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", "scripts"))
+from clipboard_bridge import COM2BridgeServer  # noqa: E402
+
+SNAKE_PY_SAMPLE = '''# OwnKrn Python Snake Game (snake.py)
+# Controls: W/A/S/D or Arrow Keys | P = Pause | R = Restart | Q = Quit
+import random
+import time
+
+WIDTH = 500
+HEIGHT = 500
+CELL = 20
+
+def start_snake_game():
+    import tkinter as tk
+
+    root = tk.Tk()
+    root.title("OwnKrn Python Snake Game")
+    root.resizable(False, False)
+    canvas = tk.Canvas(root, width=WIDTH, height=HEIGHT, bg="#0f172a", highlightthickness=0)
+    canvas.pack()
+
+    state = {
+        "snake": [(12, 12), (11, 12), (10, 12)],
+        "dir": (1, 0),
+        "food": (18, 12),
+        "score": 0,
+        "over": False,
+    }
+
+    def spawn_food():
+        cols, rows = WIDTH // CELL, HEIGHT // CELL
+        while True:
+            pos = (random.randint(0, cols - 1), random.randint(0, rows - 1))
+            if pos not in state["snake"]:
+                state["food"] = pos
+                break
+
+    def on_key(e):
+        k = e.keysym.lower()
+        dx, dy = state["dir"]
+        if k in ("up", "w") and dy == 0:
+            state["dir"] = (0, -1)
+        elif k in ("down", "s") and dy == 0:
+            state["dir"] = (0, 1)
+        elif k in ("left", "a") and dx == 0:
+            state["dir"] = (-1, 0)
+        elif k in ("right", "d") and dx == 0:
+            state["dir"] = (1, 0)
+        elif k in ("r", "space") and state["over"]:
+            state["snake"] = [(12, 12), (11, 12), (10, 12)]
+            state["dir"] = (1, 0)
+            state["score"] = 0
+            state["over"] = False
+            spawn_food()
+        elif k in ("q", "escape"):
+            root.destroy()
+
+    def loop():
+        if not state["over"]:
+            hx, hy = state["snake"][0]
+            dx, dy = state["dir"]
+            nx, ny = hx + dx, hy + dy
+            cols, rows = WIDTH // CELL, HEIGHT // CELL
+            if nx < 0 or nx >= cols or ny < 0 or ny >= rows or (nx, ny) in state["snake"]:
+                state["over"] = True
+            else:
+                state["snake"].insert(0, (nx, ny))
+                if (nx, ny) == state["food"]:
+                    state["score"] += 10
+                    spawn_food()
+                else:
+                    state["snake"].pop()
+
+        canvas.delete("all")
+        fx, fy = state["food"]
+        canvas.create_oval(fx * CELL + 2, fy * CELL + 2, (fx + 1) * CELL - 2, (fy + 1) * CELL - 2, fill="#ef4444", outline="")
+        for i, (x, y) in enumerate(state["snake"]):
+            color = "#22c55e" if i == 0 else "#4ade80"
+            canvas.create_rectangle(x * CELL + 1, y * CELL + 1, (x + 1) * CELL - 1, (y + 1) * CELL - 1, fill=color, outline="")
+        canvas.create_text(12, 12, anchor="nw", text=f"Score: {state['score']}", fill="#ffffff", font=("Consolas", 14, "bold"))
+        if state["over"]:
+            canvas.create_text(WIDTH // 2, HEIGHT // 2, text="GAME OVER! Press SPACE", fill="#f87171", font=("Consolas", 20, "bold"))
+        root.after(90, loop)
+
+    root.bind("<KeyPress>", on_key)
+    loop()
+    root.mainloop()
+
+if __name__ == "__main__":
+    start_snake_game()
+'''
+
 
 def ensure_disk(disk_path: str) -> None:
     if not os.path.exists(disk_path):
@@ -31,6 +124,10 @@ def main() -> None:
 
     ensure_disk(disk)
 
+    # Start real COM2 Host Clipboard Bridge loaded with the ~2.5 KiB snake.py game
+    bridge = COM2BridgeServer(initial_text=SNAKE_PY_SAMPLE, poll_host=False, drop_file="")
+    bridge_port = bridge.start()
+
     cmd = [
         qemu,
         "-machine", "pc",
@@ -44,6 +141,7 @@ def main() -> None:
         "-initrd", initrd,
         "-display", "none",
         "-serial", "stdio",
+        "-serial", f"tcp:127.0.0.1:{bridge_port}",
     ]
 
     proc = subprocess.Popen(
@@ -217,6 +315,45 @@ def main() -> None:
 
         out = send_cmd("find /etc -name *release")
         expect(out, "/etc/os-release", "find -name wildcard search in /etc")
+
+        # Real COM2 Host-to-Guest 2.5 KiB snake.py Paste Test in nano
+        with cond:
+            pos = len(transcript)
+        for ch in b"nano /disk/snake_com2.py\n":
+            proc.stdin.write(bytes([ch]))
+            proc.stdin.flush()
+            time.sleep(0.004)
+        read_until(b"[PYTHON .py]", timeout=10.0, start_pos=pos)
+
+        with cond:
+            pos = len(transcript)
+        proc.stdin.write(b"\x16")  # Ctrl+V: pull ~2.5 KiB snake.py over COM2 IRQ3 bridge
+        proc.stdin.flush()
+        paste_out = read_until(b"from clipboard", timeout=15.0, start_pos=pos)
+        expect(paste_out, "Pasted ", "COM2 Host Bridge pasted 2.5 KiB snake.py into nano via Ctrl+V")
+
+        with cond:
+            pos = len(transcript)
+        proc.stdin.write(b"\x13")  # Ctrl+S: Save to /disk/snake_com2.py
+        proc.stdin.flush()
+        save_out = read_until(b"Saved ", timeout=10.0, start_pos=pos)
+        expect(save_out, "/disk/snake_com2.py", "nano saved 2.5 KiB pasted snake.py to persistent /disk")
+
+        with cond:
+            pos = len(transcript)
+        proc.stdin.write(b"\x11")  # Ctrl+Q: Quit nano
+        proc.stdin.flush()
+        read_until(b"ownkrn:", timeout=10.0, start_pos=pos)
+
+        out = send_cmd("cat /disk/snake_com2.py")
+        expect(out, "# OwnKrn Python Snake Game (snake.py)", "snake_com2.py header intact (zero leading drops)")
+        expect(out, "def spawn_food():", "snake_com2.py mid-file functions intact")
+        expect(
+            out,
+            'canvas.create_rectangle(x * CELL + 1, y * CELL + 1, (x + 1) * CELL - 1, (y + 1) * CELL - 1, fill=color, outline="")',
+            "snake_com2.py 127-char line preserved with zero column truncation",
+        )
+        expect(out, "start_snake_game()", "snake_com2.py final line intact (zero trailing drops over 2.5 KiB COM2)")
 
         out = send_cmd("clip ClipboardBridgeOK && paste")
         expect(out, "ClipboardBridgeOK", "/dev/clipboard device + 'clip' & 'paste' builtins")
@@ -417,8 +554,9 @@ def main() -> None:
             raise AssertionError(f"QEMU exited with non-zero status {rc}")
 
         print("  [PASS] Clean ACPI poweroff (exit code 0)")
-        print("\nALL 79 OWNKRN v0.4 LINUX-PARITY END-TO-END TESTS PASSED!")
+        print("\nALL 85 OWNKRN v0.4 LINUX-PARITY END-TO-END TESTS PASSED!")
     finally:
+        bridge.close()
         if proc.poll() is None:
             proc.kill()
 

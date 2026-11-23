@@ -51,14 +51,20 @@ initrd*.tar
 *.cpio
 *.cpio.gz
 
-# QEMU, GDB, Clipboard Bridge sockets & crash/debug artifacts
+# QEMU, GDB, Clipboard Bridge & crash/debug artifacts
 qemu.log
+serial*.log
 gdb.txt
+clipboard.txt
+*.clip
 *.log
 *.sock
+*.qmp
+*.monitor
 *.pid
 *.pcap
 *.pcapng
+*.nvram
 .gdb_history
 core
 core.*
@@ -82,24 +88,34 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
 .venv/
 venv/
 
-# Environment & local overrides
+# Environment, local overrides & scratch workspaces
 .env
 .env.*
 !.env.example
 *.local
 *.tmp
 *.temp
+*.scratch.*
+scratch/
+tmp/
 
-# Editors & IDEs
+# Editors, IDEs & local agent metadata
 .vscode/
 .idea/
 *.iml
+*.code-workspace
 .zed/
 .fleet/
 .cursor/
+.claude/
+.agent/
+.antigravity/
 *.swp
 *.swo
 *.swn

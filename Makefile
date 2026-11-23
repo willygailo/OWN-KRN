@@ -216,7 +216,7 @@ QEMU_COMMON := \
 	-d guest_errors,cpu_reset \
 	-D $(BUILD_DIR)/qemu.log
 
-.PHONY: all iso run run-gui debug test clean check-tools defconfig menuconfig
+.PHONY: all iso run run-gui paste-file debug test clean check-tools defconfig menuconfig
 
 all: include/generated/autoconf.h $(KERNEL) $(INITRD) $(DISK_IMG)
 
@@ -316,7 +316,11 @@ run: $(KERNEL) $(INITRD) $(DISK_IMG)
 	$(PYTHON) scripts/clipboard_bridge.py -- $(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -display none -chardev stdio,id=ser0,mux=on,signal=off -mon chardev=ser0 -serial chardev:ser0
 
 run-gui: $(KERNEL) $(INITRD) $(DISK_IMG)
-	$(PYTHON) scripts/clipboard_bridge.py -- $(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -usb -device usb-tablet $(QEMU_GUI_DISPLAY) -chardev stdio,id=ser0,mux=on,signal=off -mon chardev=ser0 -serial chardev:ser0
+	$(PYTHON) scripts/clipboard_bridge.py --gui-bar -- $(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -usb -device usb-tablet $(QEMU_GUI_DISPLAY) -chardev stdio,id=ser0,mux=on,signal=off -mon chardev=ser0 -serial chardev:ser0
+
+paste-file:
+	@test -n "$(FILE)" || { echo "Usage: make paste-file FILE=laro.py"; exit 1; }
+	@$(PYTHON) scripts/clipboard_bridge.py --send-file "$(FILE)"
 
 debug: $(KERNEL) $(INITRD) $(DISK_IMG)
 	@echo "Starting QEMU paused on gdbstub tcp::1234"

@@ -8,7 +8,7 @@
 #define COM1_PORT 0x3F8
 #define COM2_PORT 0x2F8
 
-#define SERIAL_CLIP_MAX 8192
+#define SERIAL_CLIP_MAX 16384
 
 void   serial_init(void);
 void   serial_enable_rx_irq(void);
