@@ -176,6 +176,7 @@ ULIBC_OBJS := \
 USER_PROGS := \
 	$(USER_BIN)/init \
 	$(USER_BIN)/sh \
+	$(USER_BIN)/tester \
 	$(USER_BIN)/fetch \
 	$(USER_BIN)/top \
 	$(USER_BIN)/fm \

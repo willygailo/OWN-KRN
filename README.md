@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Display-1024x576x32%20VBE%20LFB-8b5cf6?style=for-the-badge&logo=linux&logoColor=white" alt="1024x576x32 VBE LFB" />
   <img src="https://img.shields.io/badge/Host%20OS-Linux%20%7C%20macOS%20%7C%20Windows-2563eb?style=for-the-badge&logo=githubactions&logoColor=white" alt="Linux | macOS | Windows" />
   <img src="https://img.shields.io/badge/Security-W%5EX%20%2B%20SMEP%20%2B%20Ring%203-f59e0b?style=for-the-badge&logo=shield&logoColor=white" alt="W^X + SMEP + Ring 3" />
-  <img src="https://img.shields.io/badge/QEMU%20Tests-54%2F54%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
+  <img src="https://img.shields.io/badge/QEMU%20Tests-58%2F58%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
 </p>
 
 <p>
@@ -153,6 +153,7 @@ flowchart LR
 
 | Category | Commands |
 | :--- | :--- |
+| 🧪 **Diagnostics & Benchmark** | `tester` / `bench` / `diag` / `memtest` (interactive 6-suite TUI testbench; `tester -b` batch mode; auto-exports report to `/disk/test_report.txt`) |
 | 🖥️ **Interactive TUI Apps** | `fetch` / `neofetch` (ASCII OS logo & live telemetry), `top` / `htop` (real-time task & memory monitor with `[k]` kill), `fm [dir]` (dual-pane file manager), `edit <file>` / `nano` (full-screen text editor), `snake` (playable arcade game) |
 | 💾 **Persistent Disk (`/disk`)** | Backed by `drivers/ata.c` (28-bit LBA PIO on `build/disk.img`): `df` / `mounts` (`/proc/mounts`), `sync`, plus persistent file read/write in `/disk/*` that survives OS reboots |
 | ⌨️ **Shell Line Editor** | **Up/Down** command history (`history`), **Left/Right/Home/End/Del** cursor line editing, **Tab** auto-completion (commands + VFS paths), `Ctrl+L` clear, `Ctrl+U`/`Ctrl+W` line/word kill |
@@ -160,7 +161,7 @@ flowchart LR
 | 🧮 **Utilities & Audio** | `calc <a op b>` (dec/hex arithmetic & bitwise calculator), `cal [month] [year]` (monthly calendar with RTC highlight), `beep [hz] [ms]` (PIT Ch2 PC Speaker audio via `/dev/speaker`) |
 | 🔀 **Pipelines & I/O** | Full multi-stage pipelines (`ps \| grep U3`, `cat /etc/motd \| wc`) + `<`, `>`, `>>` for both built-ins & ELF64 binaries |
 | 📊 **System & Hardware Info** | `uname [-a]`, `cpuinfo` (`/proc/cpuinfo`), `irqs` (`/proc/interrupts`), `ps` (`/proc/tasks`), `free` (`/proc/meminfo`), `uptime` (`/proc/uptime`), `date` (`/proc/rtc`) |
-| ⚡ **Ring 3 ELF64 Apps** | `fetch`, `top`, `fm`, `edit`, `snake`, `hello [name]`, `grep <pat> [file]`, `wc [file]`, `hexdump [file]`, `date`, `sleep <ms>`, `selftest`, `faulttest` |
+| ⚡ **Ring 3 ELF64 Apps** | `tester`, `fetch`, `top`, `fm`, `edit`, `snake`, `hello [name]`, `grep <pat> [file]`, `wc [file]`, `hexdump [file]`, `date`, `sleep <ms>`, `selftest`, `faulttest` |
 | 🔌 **Control** | `help`, `kill <pid> [sig]`, `clear` (ANSI + VBE LFB), `reboot`, `halt` / `poweroff`, `exit` |
 
 <details>

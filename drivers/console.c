@@ -237,7 +237,7 @@ static void fb_draw_bottom_dock(void) {
 
     fb_draw_bar_str(FB_ROWS - 1, 0,  " /bin/sh ", 0x00FFFFFF, ok_bg);
     fb_draw_bar_str(FB_ROWS - 1, 10, "Apps:", yell_fg, bar_bg);
-    fb_draw_bar_str(FB_ROWS - 1, 16, "fetch  top  fm (files)  edit (nano)  snake  calc  cal  df", cyan_fg, bar_bg);
+    fb_draw_bar_str(FB_ROWS - 1, 16, "tester (bench)  fetch  top  fm  edit  snake  calc  cal  df", cyan_fg, bar_bg);
     fb_draw_bar_str(FB_ROWS - 1, 75, "| Keys: [Up/Down] Hist [Tab] Auto [Ctrl+L] Clr", text_fg, bar_bg);
 }
 

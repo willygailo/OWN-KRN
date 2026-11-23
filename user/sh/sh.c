@@ -54,7 +54,8 @@ static void copy_fd(int in_fd, int out_fd) {
 static void cmd_help(int out_fd) {
     write_str_fd(out_fd,
         "\x1b[1;36mOwnKrn Interactive Shell (/bin/sh)\x1b[0m\n"
-        "  \x1b[1;32mSystem & Info:\x1b[0m\n"
+        "  \x1b[1;32mSystem, Diagnostics & Info:\x1b[0m\n"
+        "    tester / bench      Interactive 6-Suite OS Diagnostics & Benchmark Center\n"
         "    fetch / neofetch    Display ASCII OS logo & live system telemetry\n"
         "    top / htop [-n 1]   Interactive real-time process & memory monitor\n"
         "    uname [-a]          Print kernel & machine info\n"
@@ -784,6 +785,10 @@ static const char *map_cmd_alias(const char *cmd) {
     if (strcmp(cmd, "htop") == 0) {
         return "top";
     }
+    if (strcmp(cmd, "bench") == 0 || strcmp(cmd, "diag") == 0 ||
+        strcmp(cmd, "audit") == 0 || strcmp(cmd, "memtest") == 0) {
+        return "tester";
+    }
     return cmd;
 }
 
@@ -1042,7 +1047,8 @@ static void handle_tab_completion(const char *cwd, char *buf, size_t *len_io, si
 
     if (is_cmd_tok && !has_slash) {
         static const char *const cmds[] = {
-            "help", "fetch", "neofetch", "top", "htop", "fm", "edit", "nano",
+            "help", "tester", "bench", "diag", "audit", "memtest",
+            "fetch", "neofetch", "top", "htop", "fm", "edit", "nano",
             "snake", "calc", "cal", "beep", "df", "mounts", "sync",
             "uname", "cpuinfo", "irqs", "interrupts",
             "pwd", "cd", "ls", "ll", "tree", "stat",

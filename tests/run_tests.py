@@ -248,6 +248,14 @@ def main() -> None:
         expect(out, "exit_code=143", "killed child status is 128+SIGTERM (143)")
         expect(out, "Ring 3 selftest PASSED.", "full Ring 3 v0.3 selftest (refcount, pipe, dup2, malloc, kill, rtc, urandom, rename)")
 
+        out = send_cmd("tester -b")
+        expect(out, "1. Memory & Heap Stress (MemTest86)", "tester Suite 1: MemTest86 & Heap Stress")
+        expect(out, "2. CPU, Syscall & Scheduler Benchmark", "tester Suite 2: RDTSC CPU/Syscall Benchmark")
+        expect(out, "[6/6 SUITES PASSED]", "tester -b passes all 6 diagnostic & benchmark suites")
+
+        out = send_cmd("cat /disk/test_report.txt")
+        expect(out, "OVERALL VERDICT : 6 / 6 SUITES PASSED", "tester saved persistent report to /disk/test_report.txt")
+
         for ch in b"halt\n":
             proc.stdin.write(bytes([ch]))
             proc.stdin.flush()
@@ -261,7 +269,7 @@ def main() -> None:
             raise AssertionError(f"QEMU exited with non-zero status {rc}")
 
         print("  [PASS] Clean ACPI poweroff (exit code 0)")
-        print("\nALL 54 OWNKRN v0.3 CROSS-PLATFORM END-TO-END TESTS PASSED!")
+        print("\nALL 58 OWNKRN v0.3 CROSS-PLATFORM END-TO-END TESTS PASSED!")
     finally:
         if proc.poll() is None:
             proc.kill()
