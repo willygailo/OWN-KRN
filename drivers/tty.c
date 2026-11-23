@@ -64,9 +64,6 @@ void tty_rx_char(char c) {
         }
         ready_push_unlocked(c);
         spin_unlock_irqrestore(&g_tty_lock, flags);
-        if (c == 0x03) {
-            sched_signal_foreground(SIGINT);
-        }
         return;
     }
 

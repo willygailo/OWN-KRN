@@ -69,15 +69,11 @@ static ssize_t dev_read(struct vfs_node *node, void *buf, size_t len, size_t off
             return (ssize_t)len;
         }
         case DEV_CLIPBOARD: {
+            static char snap[CLIPBOARD_MAX];
             if (offset == 0) {
-                /* Pull latest Host OS clipboard over COM2 if bridge is active */
-                static char host_tmp[CLIPBOARD_MAX];
-                size_t host_n = serial_clipboard_sync_from_host(host_tmp, sizeof(host_tmp) - 1);
-                if (host_n > 0) {
-                    memcpy(g_clip_buf, host_tmp, host_n);
-                    g_clip_buf[host_n] = '\0';
-                    g_clip_len = host_n;
-                }
+                g_clip_len = serial_clipboard_read(snap, sizeof(snap) - 1);
+                snap[g_clip_len] = '\0';
+                memcpy(g_clip_buf, snap, g_clip_len + 1);
             }
             if (offset >= g_clip_len) {
                 return 0;
@@ -143,7 +139,7 @@ static ssize_t dev_write(struct vfs_node *node, const void *buf, size_t len, siz
                 }
                 g_clip_buf[g_clip_len] = '\0';
                 node->size = g_clip_len;
-                serial_clipboard_send_to_host(g_clip_buf, g_clip_len);
+                serial_clipboard_write(g_clip_buf, g_clip_len);
             }
             return (ssize_t)len;
         }

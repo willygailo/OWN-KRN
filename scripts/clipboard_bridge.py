@@ -2,25 +2,29 @@
 """
 OwnKrn Host-to-Guest Clipboard Bridge (COM2 / 0x2F8)
 Bridges the Host OS clipboard (Linux X11/Wayland, macOS, Windows) with OwnKrn's
-/dev/clipboard device over QEMU COM2 so Ctrl+V / Ctrl+Y / Ctrl+K inside
-nano/edit or /bin/sh in the QEMU GUI window works seamlessly.
+/dev/clipboard device over QEMU COM2 using an IRQ3 + 12-byte ACK-paced protocol
+(fitting cleanly inside the 16-byte 16550A UART hardware FIFO with zero drops).
 """
 
-import os
 import shutil
 import socket
 import subprocess
 import sys
 import threading
+import time
+
+g_clip_lock = threading.Lock()
+g_cached_clip = ""
 
 
-def get_host_clipboard() -> str:
-    """Read text from the Host OS clipboard across Linux, macOS, and Windows."""
-    # 1. Try Wayland / X11 / macOS / Windows CLI clipboard utilities
+def read_host_clipboard_now() -> str:
+    """Read text from the Host OS clipboard (checking CLIPBOARD and PRIMARY)."""
     cmds = [
         ["wl-paste", "--no-newline"],
         ["xclip", "-selection", "clipboard", "-o"],
         ["xsel", "--clipboard", "--output"],
+        ["xclip", "-selection", "primary", "-o"],
+        ["xsel", "--primary", "--output"],
         ["pbpaste"],
         ["powershell.exe", "-NoProfile", "-Command", "Get-Clipboard"],
     ]
@@ -31,15 +35,16 @@ def get_host_clipboard() -> str:
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
-                    timeout=1.2,
+                    timeout=0.5,
                     check=False,
                 )
                 if res.returncode == 0 and res.stdout:
-                    return res.stdout.decode("utf-8", errors="replace")
+                    txt = res.stdout.decode("utf-8", errors="replace")
+                    if txt:
+                        return txt
             except Exception:
                 pass
 
-    # 2. Fallback to Python Tkinter clipboard
     try:
         import tkinter as tk
 
@@ -57,6 +62,10 @@ def get_host_clipboard() -> str:
 
 def set_host_clipboard(text: str) -> None:
     """Write text to the Host OS clipboard across Linux, macOS, and Windows."""
+    global g_cached_clip
+    with g_clip_lock:
+        g_cached_clip = text
+
     data = text.encode("utf-8", errors="replace")
     cmds = [
         ["wl-copy"],
@@ -73,27 +82,97 @@ def set_host_clipboard(text: str) -> None:
                     input=data,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    timeout=1.2,
+                    timeout=0.8,
                     check=False,
                 )
                 return
             except Exception:
                 pass
 
-    try:
-        import tkinter as tk
 
-        r = tk.Tk()
-        r.withdraw()
-        r.clipboard_clear()
-        r.clipboard_append(text)
-        r.update()
-        r.destroy()
-    except Exception:
-        pass
+def clipboard_poller_loop() -> None:
+    """Continuously cache the Host OS clipboard in the background."""
+    global g_cached_clip
+    while True:
+        txt = read_host_clipboard_now()
+        if txt:
+            with g_clip_lock:
+                g_cached_clip = txt
+        time.sleep(0.25)
 
 
 def handle_com2_client(conn: socket.socket) -> None:
+    ack_event = threading.Event()
+    enq_event = threading.Event()
+    closed = False
+
+    try:
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    except Exception:
+        pass
+
+    def wait_ack(timeout: float = 0.08) -> bool:
+        ok = ack_event.wait(timeout)
+        ack_event.clear()
+        return ok
+
+    def push_clipboard_frame(text: str) -> None:
+        norm = text.replace("\r\n", "\n").replace("\r", "\n")
+        raw = bytes(
+            b
+            for b in norm.encode("utf-8", errors="replace")[:15000]
+            if b not in (0x02, 0x03, 0x04, 0x05, 0x06, 0x07)
+        )
+        ack_event.clear()
+        conn.sendall(b"\x02")  # STX
+        wait_ack(0.08)
+
+        # Send in 12-byte chunks paced by BEL (0x07) -> ACK (0x06) so the
+        # 16-byte 16550A UART FIFO never overflows
+        for i in range(0, len(raw), 12):
+            chunk = raw[i : i + 12]
+            ack_event.clear()
+            conn.sendall(chunk + b"\x07")
+            wait_ack(0.08)
+
+        ack_event.clear()
+        conn.sendall(b"\x03")  # ETX
+        wait_ack(0.08)
+
+    def tx_worker() -> None:
+        last_pushed = None
+        while not closed:
+            triggered = enq_event.wait(0.25)
+            if closed:
+                break
+            if triggered:
+                enq_event.clear()
+                # Refresh right now on explicit Ctrl+V / ENQ
+                fresh = read_host_clipboard_now()
+                if fresh:
+                    with g_clip_lock:
+                        global g_cached_clip
+                        g_cached_clip = fresh
+                with g_clip_lock:
+                    clip = g_cached_clip
+                try:
+                    push_clipboard_frame(clip)
+                    last_pushed = clip
+                except Exception:
+                    break
+            else:
+                # Proactively push to guest kernel when Host OS clipboard changes
+                with g_clip_lock:
+                    clip = g_cached_clip
+                if clip and clip != last_pushed:
+                    try:
+                        push_clipboard_frame(clip)
+                        last_pushed = clip
+                    except Exception:
+                        break
+
+    threading.Thread(target=tx_worker, daemon=True).start()
+
     in_stx = False
     rx_buf = bytearray()
     try:
@@ -102,23 +181,29 @@ def handle_com2_client(conn: socket.socket) -> None:
             if not chunk:
                 break
             for b in chunk:
-                if b == 0x05 and not in_stx:  # ENQ: Guest requests Host Clipboard
-                    clip = get_host_clipboard().replace("\r\n", "\n")
-                    payload = b"\x06" + clip.encode("utf-8", errors="replace")[:15000] + b"\x04"
-                    conn.sendall(payload)
-                elif b == 0x02:  # STX: Guest begins sending clipboard to Host
+                if b == 0x06 and not in_stx:  # ACK from kernel COM2
+                    ack_event.set()
+                elif b == 0x05 and not in_stx:  # ENQ: Guest requests Host Clipboard
+                    enq_event.set()
+                elif b == 0x02:  # STX: Guest sending clipboard to Host
                     in_stx = True
                     rx_buf.clear()
                 elif b == 0x03 and in_stx:  # ETX: Guest finished sending clipboard
                     in_stx = False
-                    set_host_clipboard(rx_buf.decode("utf-8", errors="replace"))
+                    text = rx_buf.decode("utf-8", errors="replace")
                     rx_buf.clear()
+                    threading.Thread(
+                        target=set_host_clipboard, args=(text,), daemon=True
+                    ).start()
                 elif in_stx:
                     if len(rx_buf) < 16384:
                         rx_buf.append(b)
     except Exception:
         pass
     finally:
+        closed = True
+        enq_event.set()
+        ack_event.set()
         try:
             conn.close()
         except Exception:
@@ -141,6 +226,8 @@ def main() -> int:
     if not argv:
         print("Usage: clipboard_bridge.py -- <qemu-command...>", file=sys.stderr)
         return 1
+
+    threading.Thread(target=clipboard_poller_loop, daemon=True).start()
 
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

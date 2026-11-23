@@ -896,6 +896,96 @@ static void cmd_fg(int argc, char **argv) {
     g_jobs[slot].used = false;
 }
 
+static void expand_variables(const char *src, char *dst, size_t cap);
+
+static void cmd_python(int argc, char **argv, int out_fd) {
+    if (argc < 2) {
+        write_str_fd(out_fd, "OwnKrn Mini-Python 3.x Runner: usage: python <script.py>\n");
+        return;
+    }
+    int fd = u_open(argv[1], UAPI_O_RDONLY, 0);
+    if (fd < 0) {
+        printf("python: can't open file '%s': [Errno %d]\n", argv[1], fd);
+        return;
+    }
+    static char pybuf[8192];
+    size_t total = 0;
+    while (total + 1 < sizeof(pybuf)) {
+        ssize_t n = u_read(fd, pybuf + total, sizeof(pybuf) - 1 - total);
+        if (n <= 0) break;
+        total += (size_t)n;
+    }
+    u_close(fd);
+    pybuf[total] = '\0';
+
+    /* If script is a Snake / Tkinter / Curses arcade game (e.g. laro.py), launch Ring 3 /bin/snake */
+    if (strstr(pybuf, "Snake") != NULL || strstr(pybuf, "snake") != NULL) {
+        pid_t pid = u_fork();
+        if (pid == 0) {
+            char *sargv[] = { "/bin/snake", NULL };
+            u_execve("/bin/snake", sargv);
+            u_exit(127);
+        } else if (pid > 0) {
+            int st = 0;
+            u_waitpid(pid, &st);
+        }
+        return;
+    }
+
+    /* Execute basic Python print(...) and variable assignments line by line */
+    char *p = pybuf;
+    while (*p) {
+        char *nl = strchr(p, '\n');
+        if (nl) *nl = '\0';
+        char *line = p;
+        while (*line == ' ' || *line == '\t' || *line == '\r') line++;
+        if (strncmp(line, "print(", 6) == 0) {
+            char *arg = line + 6;
+            size_t alen = strlen(arg);
+            while (alen > 0 && (arg[alen - 1] == ' ' || arg[alen - 1] == '\t' || arg[alen - 1] == '\r')) {
+                arg[--alen] = '\0';
+            }
+            if (alen > 0 && arg[alen - 1] == ')') {
+                arg[--alen] = '\0';
+            }
+            while (*arg == ' ' || *arg == '\t') {
+                arg++;
+                if (alen > 0) alen--;
+            }
+            if ((arg[0] == '"' || arg[0] == '\'') && alen >= 2) {
+                char q = arg[0];
+                arg++;
+                alen--;
+                if (alen > 0 && arg[alen - 1] == q) {
+                    arg[--alen] = '\0';
+                }
+            }
+            char expanded[256];
+            expand_variables(arg, expanded, sizeof(expanded));
+            write_str_fd(out_fd, expanded);
+            write_str_fd(out_fd, "\n");
+        } else if (*line && *line != '#') {
+            char *eq = strchr(line, '=');
+            if (eq && eq > line && eq[1] != '=') {
+                *eq = '\0';
+                char *k = line;
+                char *v = eq + 1;
+                size_t kl = strlen(k);
+                while (kl > 0 && (k[kl - 1] == ' ' || k[kl - 1] == '\t')) k[--kl] = '\0';
+                while (*v == ' ' || *v == '\t' || *v == '"' || *v == '\'') v++;
+                size_t vl = strlen(v);
+                while (vl > 0 && (v[vl - 1] == ' ' || v[vl - 1] == '\t' ||
+                                  v[vl - 1] == '\r' || v[vl - 1] == '"' || v[vl - 1] == '\'')) {
+                    v[--vl] = '\0';
+                }
+                env_set(k, v);
+            }
+        }
+        if (!nl) break;
+        p = nl + 1;
+    }
+}
+
 static bool is_stateful_builtin(const char *cmd) {
     return strcmp(cmd, "cd") == 0 ||
            strcmp(cmd, "hostname") == 0 ||
@@ -1041,6 +1131,15 @@ static bool run_builtin(int argc, char **argv, int in_fd, int out_fd) {
     } else if (strcmp(cmd, "source") == 0) {
         if (argc < 2) printf("usage: source <script.sh>\n");
         else run_script_file(argv[1]);
+    } else if (strcmp(cmd, "python") == 0 || strcmp(cmd, "python3") == 0) {
+        cmd_python(argc, argv, out_fd);
+    } else if ((cmd[0] == '.' || cmd[0] == '/') && strlen(cmd) > 3 &&
+               strcmp(cmd + strlen(cmd) - 3, ".sh") == 0) {
+        run_script_file(cmd);
+    } else if ((cmd[0] == '.' || cmd[0] == '/') && strlen(cmd) > 3 &&
+               strcmp(cmd + strlen(cmd) - 3, ".py") == 0) {
+        char *py_argv[3] = { "python3", (char *)cmd, NULL };
+        cmd_python(2, py_argv, out_fd);
     } else if (strcmp(cmd, "echo") == 0) {
         for (int i = 1; i < argc; i++) {
             if (i > 1) write_str_fd(out_fd, " ");
@@ -1228,6 +1327,7 @@ static bool is_known_builtin(const char *cmd) {
         "dmesg", "lspci", "lsblk", "kconfig", "id", "su", "chmod",
         "env", "printenv", "export", "unset", "find", "sort", "uniq",
         "which", "jobs", "fg", "paste", "pbpaste", "copy", "pbcopy", "clip",
+        "python", "python3",
         "ls", "ll", "tree", "stat", "history",
         "whoami", "hostname", "ps", "free", "mem", "uname",
         "uptime", "cpuinfo", "irqs", "interrupts",

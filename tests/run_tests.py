@@ -211,6 +211,9 @@ def main() -> None:
         out = send_cmd("clip ClipboardBridgeOK && paste")
         expect(out, "ClipboardBridgeOK", "/dev/clipboard device + 'clip' & 'paste' builtins")
 
+        out = send_cmd('echo "print(\\"PythonRunnerOK\\")" > /tmp/test.py && python3 /tmp/test.py')
+        expect(out, "PythonRunnerOK", "python3 <script.py> executes .py script")
+
         out = send_cmd("sleep 50 &")
         expect(out, "[1]", "background job launch with '&'")
         out = send_cmd("fg")
@@ -307,7 +310,7 @@ def main() -> None:
             raise AssertionError(f"QEMU exited with non-zero status {rc}")
 
         print("  [PASS] Clean ACPI poweroff (exit code 0)")
-        print("\nALL 69 OWNKRN v0.4 LINUX-PARITY END-TO-END TESTS PASSED!")
+        print("\nALL 70 OWNKRN v0.4 LINUX-PARITY END-TO-END TESTS PASSED!")
     finally:
         if proc.poll() is None:
             proc.kill()

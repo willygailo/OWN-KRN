@@ -69,6 +69,11 @@ static void keyboard_irq(struct interrupt_frame *frame) {
 
     if (g_ext) {
         g_ext = false;
+        if (sc == 0x1D) { g_ctrl = true;  return; } /* Right Ctrl press */
+        if (sc == 0x9D) { g_ctrl = false; return; } /* Right Ctrl release */
+        if (sc == 0x2A || sc == 0xAA || sc == 0x36 || sc == 0xB6) {
+            return; /* Ignore PS/2 fake Shift prefixes */
+        }
         if (sc & 0x80) {
             return;
         }
@@ -79,6 +84,11 @@ static void keyboard_irq(struct interrupt_frame *frame) {
             case 0x4B: push_str("\x1b[D");  return; /* Left */
             case 0x47: push_str("\x1b[H");  return; /* Home */
             case 0x4F: push_str("\x1b[F");  return; /* End */
+            case 0x52:                              /* Insert: Shift+Ins=Paste, Ctrl+Ins=Copy */
+                if (g_shift)     push_char(0x16);
+                else if (g_ctrl) push_char(0x03);
+                else             push_str("\x1b[2~");
+                return;
             case 0x53: push_str("\x1b[3~"); return; /* Delete */
             case 0x49: push_str("\x1b[5~"); return; /* Page Up */
             case 0x51: push_str("\x1b[6~"); return; /* Page Down */
