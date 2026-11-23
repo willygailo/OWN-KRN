@@ -12,8 +12,9 @@
   <img src="https://img.shields.io/badge/Arch-x86__64%20Long%20Mode-0ea5e9?style=for-the-badge&logo=intel&logoColor=white" alt="x86_64" />
   <img src="https://img.shields.io/badge/Language-C11%20%2B%20NASM-10b981?style=for-the-badge&logo=c&logoColor=white" alt="C11 + NASM" />
   <img src="https://img.shields.io/badge/Display-1024x576x32%20VBE%20LFB-8b5cf6?style=for-the-badge&logo=linux&logoColor=white" alt="1024x576x32 VBE LFB" />
+  <img src="https://img.shields.io/badge/Host%20OS-Linux%20%7C%20macOS%20%7C%20Windows-2563eb?style=for-the-badge&logo=githubactions&logoColor=white" alt="Linux | macOS | Windows" />
   <img src="https://img.shields.io/badge/Security-W%5EX%20%2B%20SMEP%20%2B%20Ring%203-f59e0b?style=for-the-badge&logo=shield&logoColor=white" alt="W^X + SMEP + Ring 3" />
-  <img src="https://img.shields.io/badge/QEMU%20Tests-52%2F52%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
+  <img src="https://img.shields.io/badge/QEMU%20Tests-54%2F54%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
 </p>
 
 <p>
@@ -180,34 +181,62 @@ flowchart LR
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Linux, macOS, Windows & Docker)
 
-### 🔧 Prerequisites
-- **Required**: `gcc`, `ld`, `nasm`, `make`, `tar`, `qemu-system-x86_64`, `python3`
-- **Optional**: `gdb` (live kernel debugging), `grub-mkrescue` + `xorriso` + `mtools` (bootable ISO via `make iso`)
+OwnKrn's build system ([Makefile](Makefile), [scripts/mkimg.py](scripts/mkimg.py), and [tests/run_tests.py](tests/run_tests.py)) auto-detects your host OS, cross-compiler (`x86_64-elf-gcc`, `x86_64-linux-gnu-gcc`, `gcc`, or `clang`), and QEMU display backend (`gtk` on Linux, `cocoa` on macOS, `sdl`/`gtk` on Windows).
 
-### ⚡ Build, Run & Verify
+### 🐧 Linux (Ubuntu / Debian / Fedora / Arch)
 
 ```bash
-# 1. Verify host toolchain
-make check-tools
+# 1. Install toolchain & QEMU automatically
+bash ./scripts/setup.sh
 
-# 2. Build kernel.elf, Ring 3 userspace ELF binaries, and initrd.tar
-make
+# 2. Build, run 54 automated QEMU tests, and launch the Widescreen GUI
+make && make test
+make run-gui
+```
 
-# 3. Run the 32-check automated end-to-end QEMU test suite
-make test
+### 🍎 macOS (Intel & Apple Silicon M1–M4)
 
-# 4. Boot interactively in your terminal (COM1 serial)
-make run
+```bash
+# 1. Install Homebrew x86_64-elf cross-compiler, NASM & QEMU
+bash ./scripts/setup.sh
+# (or manually: brew install x86_64-elf-gcc x86_64-elf-binutils nasm qemu python3 make)
+
+# 2. Build, test & launch native macOS Cocoa QEMU GUI
+make && make test
+make run-gui
+```
+
+### 🪟 Windows 10 / 11 (PowerShell, CMD, MSYS2 or WSL2)
+
+```powershell
+# Option A: PowerShell one-command launcher (supports WSL2, MSYS2, or Docker)
+.\scripts\build.ps1 setup
+.\scripts\build.ps1 test
+.\scripts\build.ps1 run-gui
+
+# Option B: Command Prompt (CMD)
+scripts\build.bat run-gui
+
+# Option C: Inside MSYS2 UCRT64 shell
+pacman -S make mingw-w64-ucrt-x86_64-nasm mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-x86_64-elf-gcc
+make && make run-gui
+```
+
+### 🐳 Docker (Zero-Install on Any OS)
+
+```bash
+docker build -t ownkrn .
+docker run --rm -it ownkrn
 ```
 
 | Command | Description |
 | :--- | :--- |
-| `make` | Compiles `build/kernel.elf`, all `user/` ELF64 binaries, and `build/initrd.tar` |
-| `make test` | Runs [tests/run_tests.sh](tests/run_tests.sh) (32 automated QEMU boot, SMEP, VFS, pipe, signal, Ring 3 & poweroff assertions) |
-| `make run` | Boots OwnKrn interactively in headless QEMU (`-display none -serial stdio`) |
-| `make run-gui` | Boots OwnKrn with graphical VGA text display + serial console |
+| `make` | Compiles `build/kernel.elf`, all `user/` ELF64 binaries, `build/initrd.tar`, and 4 MiB `build/disk.img` |
+| `make test` | Runs [tests/run_tests.py](tests/run_tests.py) (54 cross-platform automated QEMU assertions) |
+| `make run` | Boots OwnKrn interactively in headless terminal mode (`-display none -serial stdio`) |
+| `make run-gui` | Boots OwnKrn in 16:9 Widescreen `1024×576×32` VBE GUI mode (`gtk` / `cocoa` / `sdl` + `usb-tablet`) |
 | `make debug` | Pauses QEMU with GDB stub listening on `tcp::1234` |
 | `make iso` | Builds a bootable Multiboot2 `build/kernel.iso` (requires `grub-mkrescue` + `xorriso`) |
 | `make clean` | Removes `build/` artifacts |

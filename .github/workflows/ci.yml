@@ -1,4 +1,4 @@
-name: OwnKrn CI
+name: OwnKrn Cross-Platform CI
 
 on:
   push:
@@ -7,18 +7,15 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-test:
+  linux-build-and-test:
+    name: Linux (Ubuntu x86_64)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install kernel toolchain & QEMU
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc binutils nasm make tar python3 \
-            qemu-system-x86 grub-pc-bin grub-common xorriso mtools
+        run: bash ./scripts/setup.sh
 
       - name: Verify toolchain
         run: make check-tools
@@ -26,31 +23,36 @@ jobs:
       - name: Clean build kernel, userspace ELF64 & initrd
         run: make clean && make
 
-      - name: Run automated QEMU PVH end-to-end test suite
+      - name: Run 54-check automated QEMU end-to-end test suite
         run: make test
 
       - name: Build & smoke-test GRUB2 Multiboot2 ISO
         run: |
           make iso
           python3 - <<'PY'
-          import os, select, subprocess, time
+          import os, subprocess, threading, time
           cmd = [
               "qemu-system-x86_64", "-machine", "pc", "-cpu", "qemu64,+nx,+smep",
               "-m", "256M", "-no-reboot", "-cdrom", "build/kernel.iso",
+              "-drive", "file=build/disk.img,format=raw,index=0,media=disk",
               "-display", "none", "-serial", "stdio"
           ]
           p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, bufsize=0)
           buf = bytearray()
-          dl = time.monotonic() + 20.0
-          fd = p.stdout.fileno()
-          while time.monotonic() < dl:
-              if select.select([fd], [], [], 0.1)[0]:
+          def reader():
+              fd = p.stdout.fileno()
+              while True:
                   c = os.read(fd, 4096)
                   if not c: break
                   buf.extend(c)
-                  if b"ownkrn:/# " in buf:
-                      break
+          t = threading.Thread(target=reader, daemon=True)
+          t.start()
+          dl = time.monotonic() + 20.0
+          while time.monotonic() < dl:
+              if b"ownkrn:/# " in buf:
+                  break
+              time.sleep(0.05)
           out = buf.decode("utf-8", errors="replace")
           for ch in b"halt\n":
               p.stdin.write(bytes([ch])); p.stdin.flush(); time.sleep(0.005)
@@ -59,3 +61,48 @@ jobs:
           assert "Welcome to OwnKrn" in out, f"Init banner missing:\n{out}"
           print("GRUB2 Multiboot2 ISO boot smoke-test PASSED!")
           PY
+
+  macos-build-and-test:
+    name: macOS (Homebrew x86_64-elf + QEMU)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Homebrew cross-compiler & QEMU
+        run: brew install x86_64-elf-gcc x86_64-elf-binutils nasm qemu python3 make
+
+      - name: Verify toolchain
+        run: make check-tools
+
+      - name: Build & run 54-check QEMU test suite on macOS
+        run: make clean && make && make test
+
+  windows-build-and-test:
+    name: Windows (MSYS2 / Mingw64 + LLVM/ELF + QEMU)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2 with QEMU, NASM, Python & x86_64-elf toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make
+            mingw-w64-ucrt-x86_64-nasm
+            mingw-w64-ucrt-x86_64-qemu
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-x86_64-elf-gcc
+            mingw-w64-ucrt-x86_64-x86_64-elf-binutils
+
+      - name: Verify toolchain on Windows
+        run: make check-tools
+
+      - name: Build & run 54-check QEMU test suite on Windows
+        run: make clean && make && make test
