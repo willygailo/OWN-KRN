@@ -898,9 +898,204 @@ static void cmd_fg(int argc, char **argv) {
 
 static void expand_variables(const char *src, char *dst, size_t cap);
 
+static int py_eval_atom(const char *tok) {
+    while (*tok == ' ' || *tok == '\t') tok++;
+    if ((*tok >= '0' && *tok <= '9') || *tok == '-') {
+        return atoi(tok);
+    }
+    const char *v = env_get(tok);
+    if (v && v[0]) {
+        return atoi(v);
+    }
+    return 0;
+}
+
+static void py_expand_fstring(const char *src, char *dst, size_t cap) {
+    size_t out = 0;
+    for (size_t i = 0; src[i] && out + 1 < cap; ) {
+        if (src[i] == '{') {
+            i++;
+            char key[32];
+            size_t kl = 0;
+            while (src[i] && src[i] != '}') {
+                if (kl + 1 < sizeof(key) && src[i] != ' ') {
+                    key[kl++] = src[i];
+                }
+                i++;
+            }
+            if (src[i] == '}') i++;
+            key[kl] = '\0';
+            const char *val = env_get(key);
+            for (size_t k = 0; val[k] && out + 1 < cap; k++) {
+                dst[out++] = val[k];
+            }
+            continue;
+        }
+        dst[out++] = src[i++];
+    }
+    dst[out] = '\0';
+}
+
+static void py_exec_single_stmt(char *raw_stmt, int out_fd) {
+    char stmt[256];
+    strncpy(stmt, raw_stmt, sizeof(stmt) - 1);
+    stmt[sizeof(stmt) - 1] = '\0';
+
+    char *line = stmt;
+    while (*line == ' ' || *line == '\t' || *line == '\r') line++;
+    size_t llen = strlen(line);
+    while (llen > 0 && (line[llen - 1] == ' ' || line[llen - 1] == '\t' || line[llen - 1] == '\r')) {
+        line[--llen] = '\0';
+    }
+    if (!*line || *line == '#' || strncmp(line, "import ", 7) == 0 || strncmp(line, "from ", 5) == 0) {
+        return;
+    }
+
+    if (strncmp(line, "time.sleep(", 11) == 0) {
+        int sec = atoi(line + 11);
+        if (sec > 0 && sec <= 10) {
+            u_msleep((uint64_t)sec * 1000ULL);
+        }
+        return;
+    }
+
+    if (strncmp(line, "print(", 6) == 0) {
+        char *arg = line + 6;
+        size_t alen = strlen(arg);
+        if (alen > 0 && arg[alen - 1] == ')') {
+            arg[--alen] = '\0';
+        }
+        while (*arg == ' ' || *arg == '\t') {
+            arg++;
+            if (alen > 0) alen--;
+        }
+        bool is_fstr = false;
+        if ((arg[0] == 'f' || arg[0] == 'F') && (arg[1] == '"' || arg[1] == '\'')) {
+            is_fstr = true;
+            arg++;
+            alen--;
+        }
+        if ((arg[0] == '"' || arg[0] == '\'') && alen >= 2) {
+            char q = arg[0];
+            arg++;
+            alen--;
+            if (alen > 0 && arg[alen - 1] == q) {
+                arg[--alen] = '\0';
+            }
+            char out_buf[256];
+            if (is_fstr) {
+                py_expand_fstring(arg, out_buf, sizeof(out_buf));
+            } else {
+                expand_variables(arg, out_buf, sizeof(out_buf));
+            }
+            write_str_fd(out_fd, out_buf);
+            write_str_fd(out_fd, "\n");
+            return;
+        }
+        /* Print variable or literal expression */
+        const char *v = env_get(arg);
+        if (v && v[0]) {
+            write_str_fd(out_fd, v);
+        } else {
+            write_str_fd(out_fd, arg);
+        }
+        write_str_fd(out_fd, "\n");
+        return;
+    }
+
+    char *eq = strchr(line, '=');
+    if (eq && eq > line && eq[1] != '=' && eq[-1] != '!' && eq[-1] != '<' && eq[-1] != '>') {
+        *eq = '\0';
+        char *k = line;
+        char *v = eq + 1;
+        size_t kl = strlen(k);
+        while (kl > 0 && (k[kl - 1] == ' ' || k[kl - 1] == '\t')) k[--kl] = '\0';
+        while (*v == ' ' || *v == '\t') v++;
+
+        /* Handle random.randint(a, b) */
+        const char *ri = strstr(v, "randint(");
+        if (ri) {
+            ri += 8;
+            int lo = atoi(ri);
+            const char *comma = strchr(ri, ',');
+            int hi = comma ? atoi(comma + 1) : (lo + 10);
+            if (hi < lo) hi = lo;
+            uint32_t rnd = 42;
+            int ufd = u_open("/dev/urandom", UAPI_O_RDONLY, 0);
+            if (ufd >= 0) {
+                u_read(ufd, &rnd, sizeof(rnd));
+                u_close(ufd);
+            }
+            int val = lo + (int)(rnd % (uint32_t)(hi - lo + 1));
+            char nbuf[24];
+            snprintf(nbuf, sizeof(nbuf), "%d", val);
+            env_set(k, nbuf);
+            return;
+        }
+
+        /* Handle input("Prompt") */
+        if (strncmp(v, "input(", 6) == 0) {
+            char *parg = v + 6;
+            size_t plen = strlen(parg);
+            if (plen > 0 && parg[plen - 1] == ')') parg[--plen] = '\0';
+            if ((parg[0] == '"' || parg[0] == '\'') && plen >= 2) {
+                parg++;
+                plen--;
+                if (plen > 0) parg[plen - 1] = '\0';
+            }
+            if (*parg) write_str_fd(out_fd, parg);
+            char inbuf[128];
+            ssize_t rn = u_read(0, inbuf, sizeof(inbuf) - 1);
+            if (rn > 0) {
+                while (rn > 0 && (inbuf[rn - 1] == '\n' || inbuf[rn - 1] == '\r')) rn--;
+                inbuf[rn] = '\0';
+                env_set(k, inbuf);
+            }
+            return;
+        }
+
+        /* Handle string literal assignment */
+        if (v[0] == '"' || v[0] == '\'') {
+            char q = v[0];
+            v++;
+            size_t vl = strlen(v);
+            if (vl > 0 && v[vl - 1] == q) v[--vl] = '\0';
+            env_set(k, v);
+            return;
+        }
+
+        /* Handle binary arithmetic: a + b, a - b, a * b, a / b */
+        char op = 0;
+        char *op_ptr = NULL;
+        for (char *scan = v; *scan; scan++) {
+            if (*scan == '+' || (*scan == '-' && scan > v) || *scan == '*' || *scan == '/') {
+                op = *scan;
+                op_ptr = scan;
+                break;
+            }
+        }
+        if (op && op_ptr) {
+            *op_ptr = '\0';
+            int lhs = py_eval_atom(v);
+            int rhs = py_eval_atom(op_ptr + 1);
+            int res = lhs;
+            if (op == '+') res = lhs + rhs;
+            else if (op == '-') res = lhs - rhs;
+            else if (op == '*') res = lhs * rhs;
+            else if (op == '/' && rhs != 0) res = lhs / rhs;
+            char nbuf[24];
+            snprintf(nbuf, sizeof(nbuf), "%d", res);
+            env_set(k, nbuf);
+            return;
+        }
+
+        env_set(k, v);
+    }
+}
+
 static void cmd_python(int argc, char **argv, int out_fd) {
     if (argc < 2) {
-        write_str_fd(out_fd, "OwnKrn Mini-Python 3.x Runner: usage: python <script.py>\n");
+        write_str_fd(out_fd, "OwnKrn Mini-Python 3.x Runner: usage: python3 <script.py>\n");
         return;
     }
     int fd = u_open(argv[1], UAPI_O_RDONLY, 0);
@@ -932,57 +1127,62 @@ static void cmd_python(int argc, char **argv, int out_fd) {
         return;
     }
 
-    /* Execute basic Python print(...) and variable assignments line by line */
+    /* Split script into lines and execute (supporting 'for var in range(...):' indented blocks) */
+    static char *lines[256];
+    int nlines = 0;
     char *p = pybuf;
-    while (*p) {
+    while (*p && nlines < 256) {
         char *nl = strchr(p, '\n');
         if (nl) *nl = '\0';
-        char *line = p;
-        while (*line == ' ' || *line == '\t' || *line == '\r') line++;
-        if (strncmp(line, "print(", 6) == 0) {
-            char *arg = line + 6;
-            size_t alen = strlen(arg);
-            while (alen > 0 && (arg[alen - 1] == ' ' || arg[alen - 1] == '\t' || arg[alen - 1] == '\r')) {
-                arg[--alen] = '\0';
-            }
-            if (alen > 0 && arg[alen - 1] == ')') {
-                arg[--alen] = '\0';
-            }
-            while (*arg == ' ' || *arg == '\t') {
-                arg++;
-                if (alen > 0) alen--;
-            }
-            if ((arg[0] == '"' || arg[0] == '\'') && alen >= 2) {
-                char q = arg[0];
-                arg++;
-                alen--;
-                if (alen > 0 && arg[alen - 1] == q) {
-                    arg[--alen] = '\0';
-                }
-            }
-            char expanded[256];
-            expand_variables(arg, expanded, sizeof(expanded));
-            write_str_fd(out_fd, expanded);
-            write_str_fd(out_fd, "\n");
-        } else if (*line && *line != '#') {
-            char *eq = strchr(line, '=');
-            if (eq && eq > line && eq[1] != '=') {
-                *eq = '\0';
-                char *k = line;
-                char *v = eq + 1;
-                size_t kl = strlen(k);
-                while (kl > 0 && (k[kl - 1] == ' ' || k[kl - 1] == '\t')) k[--kl] = '\0';
-                while (*v == ' ' || *v == '\t' || *v == '"' || *v == '\'') v++;
-                size_t vl = strlen(v);
-                while (vl > 0 && (v[vl - 1] == ' ' || v[vl - 1] == '\t' ||
-                                  v[vl - 1] == '\r' || v[vl - 1] == '"' || v[vl - 1] == '\'')) {
-                    v[--vl] = '\0';
-                }
-                env_set(k, v);
-            }
-        }
+        lines[nlines++] = p;
         if (!nl) break;
         p = nl + 1;
+    }
+
+    for (int i = 0; i < nlines; ) {
+        char *ln = lines[i];
+        while (*ln == ' ' || *ln == '\t') ln++;
+
+        if (strncmp(ln, "for ", 4) == 0 && strstr(ln, " in range(") != NULL) {
+            char var_name[32];
+            const char *vstart = ln + 4;
+            const char *in_pos = strstr(vstart, " in range(");
+            size_t vlen = (size_t)(in_pos - vstart);
+            if (vlen >= sizeof(var_name)) vlen = sizeof(var_name) - 1;
+            memcpy(var_name, vstart, vlen);
+            var_name[vlen] = '\0';
+
+            const char *rargs = in_pos + 10;
+            int r_start = 0, r_end = 0;
+            const char *comma = strchr(rargs, ',');
+            if (comma) {
+                r_start = atoi(rargs);
+                r_end = atoi(comma + 1);
+            } else {
+                r_end = atoi(rargs);
+            }
+
+            int body_start = i + 1;
+            int body_end = body_start;
+            while (body_end < nlines &&
+                   (lines[body_end][0] == ' ' || lines[body_end][0] == '\t')) {
+                body_end++;
+            }
+
+            for (int val = r_start; val < r_end && (val - r_start) < 64; val++) {
+                char nbuf[24];
+                snprintf(nbuf, sizeof(nbuf), "%d", val);
+                env_set(var_name, nbuf);
+                for (int b = body_start; b < body_end; b++) {
+                    py_exec_single_stmt(lines[b], out_fd);
+                }
+            }
+            i = body_end;
+            continue;
+        }
+
+        py_exec_single_stmt(ln, out_fd);
+        i++;
     }
 }
 
@@ -1295,7 +1495,9 @@ static const char *map_cmd_alias(const char *cmd) {
     if (strcmp(cmd, "neofetch") == 0 || strcmp(cmd, "sysinfo") == 0) {
         return "fetch";
     }
-    if (strcmp(cmd, "nano") == 0) {
+    if (strcmp(cmd, "nano") == 0 || strcmp(cmd, "code") == 0 ||
+        strcmp(cmd, "micro") == 0 || strcmp(cmd, "vim") == 0 ||
+        strcmp(cmd, "vi") == 0) {
         return "edit";
     }
     if (strcmp(cmd, "htop") == 0) {
@@ -2064,6 +2266,11 @@ static ssize_t sh_readline(const char *cwd, char *buf, size_t cap) {
 int main(int argc, char **argv) {
     env_init();
     if (argc > 1) {
+        size_t alen = strlen(argv[1]);
+        if (alen > 3 && strcmp(argv[1] + alen - 3, ".py") == 0) {
+            cmd_python(argc, argv, 1);
+            return 0;
+        }
         return run_script_file(argv[1]);
     }
 

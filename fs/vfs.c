@@ -468,7 +468,7 @@ ssize_t vfs_write(struct task *t, int fd, const void *buf, size_t len) {
         f->offset = f->node->size;
     }
     ssize_t n = f->node->ops->write(f->node, buf, len, f->offset);
-    if (n > 0 && f->node->type == VFS_FILE) {
+    if (n > 0 && (f->node->type == VFS_FILE || f->node->type == VFS_CHARDEV)) {
         f->offset += (size_t)n;
     }
     return n;

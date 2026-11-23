@@ -211,8 +211,105 @@ def main() -> None:
         out = send_cmd("clip ClipboardBridgeOK && paste")
         expect(out, "ClipboardBridgeOK", "/dev/clipboard device + 'clip' & 'paste' builtins")
 
-        out = send_cmd('echo "print(\\"PythonRunnerOK\\")" > /tmp/test.py && python3 /tmp/test.py')
-        expect(out, "PythonRunnerOK", "python3 <script.py> executes .py script")
+        out = send_cmd("code --help")
+        expect(out, "OwnKrn Code Studio", "code / nano / edit / micro TUI Code Studio alias")
+
+        out = send_cmd('echo "score = 10 + 5" > /tmp/test.py && echo "for i in range(1, 3):" >> /tmp/test.py && echo "    print(f\'Loop {i} Score={score}\')" >> /tmp/test.py && python3 /tmp/test.py')
+        expect(out, "Loop 1 Score=15", "python3 executes for-range loop, arithmetic & f-strings")
+        expect(out, "Loop 2 Score=15", "python3 second loop iteration")
+
+        # Interactive nano TUI test 1: Paste (Ctrl+V), Dup (Ctrl+D), Cut (Ctrl+K), Undo (Ctrl+Z), SelectAll (Ctrl+A), Copy (Ctrl+C), Save (Ctrl+S), Quit (Ctrl+Q) on .py
+        send_cmd('clip "print(\'NanoPastePyOK\')"')
+        with cond:
+            pos = len(transcript)
+        for ch in b"nano /disk/nano_paste.py\n":
+            proc.stdin.write(bytes([ch]))
+            proc.stdin.flush()
+            time.sleep(0.004)
+        nano_open = read_until(b"[PYTHON .py]", timeout=10.0, start_pos=pos)
+        expect(nano_open, "OwnKrn Code Studio", "nano launches TUI Code Studio in [PYTHON .py] mode")
+
+        with cond:
+            pos = len(transcript)
+        # Send Ctrl+V (paste), Ctrl+D (dup), Ctrl+K (cut), Ctrl+Z (undo), Ctrl+A (all), Ctrl+C (copy), Ctrl+S (save), Ctrl+Q (quit)
+        for ch in b"\x16\x04\x0b\x1a\x01\x03\x13\x11":
+            proc.stdin.write(bytes([ch]))
+            proc.stdin.flush()
+            time.sleep(0.03)
+        read_until(b"ownkrn:", timeout=10.0, start_pos=pos)
+
+        out = send_cmd("python3 /disk/nano_paste.py")
+        expect(out, "NanoPastePyOK", "nano Ctrl+V Paste + Ctrl+S Save + python3 execution works")
+
+        # Interactive nano TUI test 2: Ctrl+T (Starter Template) + Ctrl+R (In-Editor Save & Run) on .py
+        with cond:
+            pos = len(transcript)
+        for ch in b"nano /disk/nano_tpl.py\n":
+            proc.stdin.write(bytes([ch]))
+            proc.stdin.flush()
+            time.sleep(0.004)
+        read_until(b"[PYTHON .py]", timeout=10.0, start_pos=pos)
+
+        with cond:
+            pos = len(transcript)
+        # Send Ctrl+T (Template) then Ctrl+R (Save & Run inside nano)
+        for ch in b"\x14\x12":
+            proc.stdin.write(bytes([ch]))
+            proc.stdin.flush()
+            time.sleep(0.04)
+        run_out = read_until(b"Press ENTER or SPACE to return to Code Studio", timeout=10.0, start_pos=pos)
+        expect(run_out, "Welcome to OwnKrn Python, Willy!", "nano Ctrl+T template + Ctrl+R in-editor Python runner")
+
+        with cond:
+            pos = len(transcript)
+        # Press Enter to return to nano, then Ctrl+Q to quit
+        for ch in b"\n\x11":
+            proc.stdin.write(bytes([ch]))
+            proc.stdin.flush()
+            time.sleep(0.04)
+        read_until(b"ownkrn:", timeout=10.0, start_pos=pos)
+
+        # Interactive nano TUI test 3: .sh script (Ctrl+T Template + Ctrl+S Save + execute /disk/nano_script.sh)
+        with cond:
+            pos = len(transcript)
+        for ch in b"nano /disk/nano_script.sh\n":
+            proc.stdin.write(bytes([ch]))
+            proc.stdin.flush()
+            time.sleep(0.004)
+        sh_open = read_until(b"[SHELL  .sh]", timeout=10.0, start_pos=pos)
+        expect(sh_open, "[SHELL  .sh]", "nano auto-detects [SHELL .sh] syntax mode")
+
+        with cond:
+            pos = len(transcript)
+        for ch in b"\x14\x13\x11":
+            proc.stdin.write(bytes([ch]))
+            proc.stdin.flush()
+            time.sleep(0.03)
+        read_until(b"ownkrn:", timeout=10.0, start_pos=pos)
+
+        out = send_cmd("/disk/nano_script.sh")
+        expect(out, "=== OwnKrn System Check ===", "nano saved executable .sh script and ran '/disk/nano_script.sh'")
+
+        # Interactive nano TUI test 4: .txt notes (typing + Ctrl+S Save + Ctrl+Q Quit)
+        with cond:
+            pos = len(transcript)
+        for ch in b"nano /disk/nano_notes.txt\n":
+            proc.stdin.write(bytes([ch]))
+            proc.stdin.flush()
+            time.sleep(0.004)
+        txt_open = read_until(b"[TEXT  .txt]", timeout=10.0, start_pos=pos)
+        expect(txt_open, "[TEXT  .txt]", "nano auto-detects [TEXT .txt] mode")
+
+        with cond:
+            pos = len(transcript)
+        for ch in b"# OwnKrn Text File\nHello from nano txt!\x13\x11":
+            proc.stdin.write(bytes([ch]))
+            proc.stdin.flush()
+            time.sleep(0.01)
+        read_until(b"ownkrn:", timeout=10.0, start_pos=pos)
+
+        out = send_cmd("cat /disk/nano_notes.txt")
+        expect(out, "Hello from nano txt!", "nano edited & saved .txt file verified with cat")
 
         out = send_cmd("sleep 50 &")
         expect(out, "[1]", "background job launch with '&'")
@@ -310,7 +407,7 @@ def main() -> None:
             raise AssertionError(f"QEMU exited with non-zero status {rc}")
 
         print("  [PASS] Clean ACPI poweroff (exit code 0)")
-        print("\nALL 70 OWNKRN v0.4 LINUX-PARITY END-TO-END TESTS PASSED!")
+        print("\nALL 79 OWNKRN v0.4 LINUX-PARITY END-TO-END TESTS PASSED!")
     finally:
         if proc.poll() is None:
             proc.kill()
