@@ -14,10 +14,11 @@
   <img src="https://img.shields.io/badge/Display-1024x576x32%20VBE%20LFB-8b5cf6?style=for-the-badge&logo=linux&logoColor=white" alt="1024x576x32 VBE LFB" />
   <img src="https://img.shields.io/badge/Host%20OS-Linux%20%7C%20macOS%20%7C%20Windows-2563eb?style=for-the-badge&logo=githubactions&logoColor=white" alt="Linux | macOS | Windows" />
   <img src="https://img.shields.io/badge/Security-W%5EX%20%2B%20SMEP%20%2B%20Ring%203-f59e0b?style=for-the-badge&logo=shield&logoColor=white" alt="W^X + SMEP + Ring 3" />
-  <img src="https://img.shields.io/badge/QEMU%20Tests-79%2F79%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
+  <img src="https://img.shields.io/badge/QEMU%20Tests-85%2F85%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
 </p>
 
 <p>
+  <a href="#-live-video-demo">🎬 Video Demo</a> •
   <a href="#-live-boot--shell-preview">🖥️ Live Preview</a> •
   <a href="#-core-features">✨ Features</a> •
   <a href="#-system-architecture">🏗️ Architecture</a> •
@@ -37,8 +38,38 @@
 OwnKrn boots directly in `qemu-system-x86_64` into 64-bit Long Mode, initializes a **16:9 Widescreen 32-Bit Linear Framebuffer (`1024×576×32`, `128×36` grid)** with a live 1 Hz Top OS HUD Bar and Bottom App Dock, mounts a persistent **ATA0 28-bit LBA hard disk at `/disk`**, enters **Ring 3** as PID 1 (`/bin/init`), and launches `/bin/fetch` + the interactive `/bin/sh` shell:
 
 <div align="center">
-  <img src="assets/widescreen-gui.jpg" alt="OwnKrn v0.3.0 Widescreen 1024x576x32 VBE Framebuffer & Live OS HUD" width="96%" />
+  <img src="assets/widescreen-gui.jpg" alt="OwnKrn v0.4.0 Widescreen 1024x576x32 VBE Framebuffer & Live OS HUD" width="96%" />
 </div>
+
+### 🎬 Live Video Demo
+
+Watch **OwnKrn 0.4.0-x86_64** boot live in QEMU, run Ring 3 shell commands (`whoami`, `id`, `ls`, `mkdir`, `touch`), open **Code Studio (`nano`)**, and execute Python scripts:
+
+<div align="center">
+  <a href="assets/demo.mp4" title="Watch Full HD Demo Video (1m 50s, H.264 MP4 with Audio)">
+    <img src="assets/demo-preview.gif" alt="OwnKrn 0.4.0 Live Video Demo Preview (Click to watch full HD MP4)" width="96%" />
+  </a>
+  <br /><br />
+  <a href="assets/demo.mp4">
+    <img src="https://img.shields.io/badge/%E2%96%B6%EF%B8%8F_Watch_Full_Demo_(1m_50s_HD_MP4)-0ea5e9?style=for-the-badge" alt="Watch Full Demo MP4" />
+  </a>
+  <a href="https://github.com/willygailo/OWN-KRN/raw/main/assets/demo.mp4">
+    <img src="https://img.shields.io/badge/%E2%AC%87%EF%B8%8F_Download_MP4_(5.5_MB)-10b981?style=for-the-badge" alt="Download MP4" />
+  </a>
+  <br />
+  <sub><em>Auto-playing animated highlight reel above · Click to open the full 960×576 H.264 walkthrough with audio (<code>assets/demo.mp4</code>)</em></sub>
+</div>
+
+<details>
+<summary>🎞️ <b>Inline HTML5 Video Player (for VS Code / Local Markdown Viewers)</b></summary>
+
+<div align="center">
+  <video src="assets/demo.mp4" controls playsinline width="96%">
+    Your viewer does not support inline video — <a href="assets/demo.mp4">open <code>assets/demo.mp4</code></a>.
+  </video>
+</div>
+
+</details>
 
 ---
 
@@ -197,7 +228,7 @@ OwnKrn's build system ([Makefile](Makefile), [scripts/mkimg.py](scripts/mkimg.py
 # 1. Install toolchain & QEMU automatically
 bash ./scripts/setup.sh
 
-# 2. Build, run 79 automated QEMU tests, and launch the Widescreen GUI (with Host Clipboard Bridge)
+# 2. Build, run 85 automated QEMU tests, and launch the Widescreen GUI (with Host Clipboard Bridge)
 make && make test
 make run-gui
 ```
@@ -242,7 +273,7 @@ docker run --rm -it ownkrn
 | `make` | Compiles `build/kernel.elf`, all `user/` ELF64 binaries, `build/initrd.tar`, and 4 MiB `build/disk.img` |
 | `make defconfig` | Generates `.config` and `include/generated/autoconf.h` from `configs/x86_64_defconfig` |
 | `make menuconfig` | Launches the interactive Linux-style `Kconfig` curses configuration menu |
-| `make test` | Runs [tests/run_tests.py](tests/run_tests.py) (79 cross-platform automated QEMU assertions) |
+| `make test` | Runs [tests/run_tests.py](tests/run_tests.py) (85 cross-platform automated QEMU assertions) |
 | `make run` | Boots OwnKrn interactively in headless terminal mode (`-display none -serial stdio` + COM2 clipboard bridge) |
 | `make run-gui` | Boots OwnKrn in 16:9 Widescreen `1024×576×32` VBE GUI mode (`gtk` / `cocoa` / `sdl` + `usb-tablet` + COM2 Host Clipboard Bridge) |
 | `make debug` | Pauses QEMU with GDB stub listening on `tcp::1234` |
@@ -276,8 +307,8 @@ OWN KRN/
 ├── 📚 lib/                     # Freestanding string & vsnprintf
 ├── 📑 include/                 # Kernel headers, font8x16.h & shared include/uapi/syscall.h
 ├── 👤 user/                    # user.ld, libc, init, sh (Python runner + jobs), tester, fetch, top, fm, edit (Code Studio), snake
-├── ✅ tests/                   # run_tests.py (79-check threaded cross-platform runner) & run_tests.sh
-└── 🖼️ assets/                  # Hero banner, architecture diagram & widescreen-gui.jpg preview
+├── ✅ tests/                   # run_tests.py (85-check threaded cross-platform runner + COM2 paste test) & run_tests.sh
+└── 🖼️ assets/                  # Hero banner, architecture diagram, widescreen-gui.jpg, demo.mp4 & demo-preview.gif
 ```
 
 ---
@@ -294,7 +325,7 @@ OWN KRN/
 - [x] **Phase 7** — Freestanding `user/libc`, PID 1 `/bin/init`, interactive `/bin/sh`, automated QEMU E2E tests & documentation
 - [x] **v0.2.0 Hardening & Unix IPC** — Refcounted VFS/tmpfs, `CR4.SMEP`, CMOS RTC (`date`), `pipe`/`dup`/`dup2` + shell pipelines (`|`, `<`, `>`, `>>`), POSIX `kill`/`SIGINT`, Ring 3 fault containment, `grep`/`wc`/`hexdump`/`sleep` & GitHub Actions CI (32/32 tests passing)
 - [x] **v0.3.0 Widescreen VBE GUI, Persistent `/disk`, TUI Suite & Cross-Platform Support** — Bochs VBE `1024×576×32` linear framebuffer (`128×36` grid + live 1 Hz Top HUD Bar & Bottom Dock), ATA0 28-bit LBA persistent `/disk` (`diskfs`), PIT Ch2 PC Speaker (`beep`), raw/non-blocking `SYS_ioctl` TTY, `SYS_rename` (`mv`/`cp`), shell line editing (arrow history + tab completion + scripts), `fetch`/`top`/`fm`/`edit`/`snake`/`calc`/`cal`, `/dev/urandom`, `/proc/cpuinfo`/`interrupts`/`mounts`, and Linux/macOS/Windows/Docker support (54/54 tests passing)
-- [x] **v0.4.0 `torvalds/linux`-Style Kconfig, `dmesg`, PCI Bus, `mmap`, Multi-User `UID`/`GID`, TUI Code Studio & Host Clipboard Bridge** — `Kconfig`/`.config` + `make defconfig` & interactive `make menuconfig` + `/proc/config`, 16 KiB `[    0.000000]` `dmesg` ring buffer (`/proc/kmsg`), PCI Bus hardware enumeration (`lspci`, `/proc/pci`) & block partition table (`lsblk`, `/proc/partitions`), `SYS_mmap`/`SYS_munmap`, multi-user `UID`/`GID` credentials (`id`, `su root/guest`, `chmod`) + Linux FHS (`/etc/os-release`, `/etc/passwd`), `$VAR`/`$?` expansion + `;`/`&&` chaining + background jobs (`&`, `jobs`, `fg`), `find`/`sort`/`uniq`/`which`, COM2 Host-to-GUI Clipboard Bridge (`/dev/clipboard`, `clip`/`paste`, `scripts/clipboard_bridge.py`), OwnKrn TUI Code Studio (`code`/`nano`/`edit`/`micro` with `.py`/`.sh`/`.c`/`.txt` syntax highlighting, auto-indent, `Ctrl+Shift+V`/`Ctrl+V` Paste, `Ctrl+T` Templates & `Ctrl+R` Save & Run + Mini-Python 3.x runner), and 6-suite `/bin/tester` testbench (79/79 tests passing)
+- [x] **v0.4.0 `torvalds/linux`-Style Kconfig, `dmesg`, PCI Bus, `mmap`, Multi-User `UID`/`GID`, TUI Code Studio & Host Clipboard Bridge** — `Kconfig`/`.config` + `make defconfig` & interactive `make menuconfig` + `/proc/config`, 16 KiB `[    0.000000]` `dmesg` ring buffer (`/proc/kmsg`), PCI Bus hardware enumeration (`lspci`, `/proc/pci`) & block partition table (`lsblk`, `/proc/partitions`), `SYS_mmap`/`SYS_munmap`, multi-user `UID`/`GID` credentials (`id`, `su root/guest`, `chmod`) + Linux FHS (`/etc/os-release`, `/etc/passwd`), `$VAR`/`$?` expansion + `;`/`&&` chaining + background jobs (`&`, `jobs`, `fg`), `find`/`sort`/`uniq`/`which`, COM2 Host-to-GUI Clipboard Bridge (`/dev/clipboard`, `clip`/`paste`, `scripts/clipboard_bridge.py`), OwnKrn TUI Code Studio (`code`/`nano`/`edit`/`micro` with `.py`/`.sh`/`.c`/`.txt` syntax highlighting, auto-indent, `Ctrl+Shift+V`/`Ctrl+V` Paste, `Ctrl+T` Templates & `Ctrl+R` Save & Run + Mini-Python 3.x runner), and 6-suite `/bin/tester` testbench (85/85 tests passing)
 
 ---
 
