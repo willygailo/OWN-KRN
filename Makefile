@@ -15,6 +15,7 @@ USER_BIN  := $(BUILD_DIR)/user_bin
 KERNEL    := $(BUILD_DIR)/kernel.elf
 INITRD    := $(BUILD_DIR)/initrd.tar
 ISO       := $(BUILD_DIR)/kernel.iso
+DISK_IMG  := $(BUILD_DIR)/disk.img
 
 # Freestanding Higher-Half Kernel Flags
 CFLAGS := \
@@ -97,11 +98,14 @@ C_SRCS := \
 	fs/initrd.c \
 	fs/devfs.c \
 	fs/procfs.c \
+	fs/diskfs.c \
 	drivers/serial.c \
 	drivers/console.c \
 	drivers/keyboard.c \
 	drivers/rtc.c \
 	drivers/tty.c \
+	drivers/ata.c \
+	drivers/speaker.c \
 	lib/string.c \
 	lib/vsnprintf.c
 
@@ -120,6 +124,7 @@ USER_PROGS := \
 	$(USER_BIN)/sh \
 	$(USER_BIN)/fetch \
 	$(USER_BIN)/top \
+	$(USER_BIN)/fm \
 	$(USER_BIN)/edit \
 	$(USER_BIN)/snake \
 	$(USER_BIN)/hello \
@@ -139,12 +144,20 @@ QEMU_COMMON := \
 	-cpu qemu64,+nx,+smep \
 	-m 256M \
 	-no-reboot \
+	-drive file=$(DISK_IMG),format=raw,index=0,media=disk \
 	-d guest_errors,cpu_reset \
 	-D $(BUILD_DIR)/qemu.log
 
 .PHONY: all iso run run-gui debug test clean check-tools
 
-all: $(KERNEL) $(INITRD)
+all: $(KERNEL) $(INITRD) $(DISK_IMG)
+
+$(DISK_IMG):
+	@mkdir -p $(dir $@)
+	@if [ ! -f $@ ]; then \
+		dd if=/dev/zero of=$@ bs=1M count=4 status=none; \
+		echo "Created persistent ATA disk image $@ (4 MiB)"; \
+	fi
 
 check-tools:
 	@for t in $(CC) $(LD) $(AS) $(QEMU) gdb objdump readelf tar; do \
@@ -224,18 +237,18 @@ iso: $(KERNEL) $(INITRD)
 	grub-mkrescue -o $(ISO) $(BUILD_DIR)/isodir
 	@echo "Built $(ISO)"
 
-run: $(KERNEL) $(INITRD)
+run: $(KERNEL) $(INITRD) $(DISK_IMG)
 	$(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -display none -chardev stdio,id=ser0,mux=on,signal=off -mon chardev=ser0 -serial chardev:ser0
 
-run-gui: $(KERNEL) $(INITRD)
-	$(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -display gtk,zoom-to-fit=on,show-cursor=on -chardev stdio,id=ser0,mux=on,signal=off -mon chardev=ser0 -serial chardev:ser0
+run-gui: $(KERNEL) $(INITRD) $(DISK_IMG)
+	$(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -usb -device usb-tablet -display gtk,zoom-to-fit=on,show-cursor=on -chardev stdio,id=ser0,mux=on,signal=off -mon chardev=ser0 -serial chardev:ser0
 
-debug: $(KERNEL) $(INITRD)
+debug: $(KERNEL) $(INITRD) $(DISK_IMG)
 	@echo "Starting QEMU paused on gdbstub tcp::1234"
 	@echo "Attach with: gdb -ex 'file $(KERNEL)' -ex 'target remote :1234'"
 	$(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -display none -serial stdio -s -S
 
-test: $(KERNEL) $(INITRD)
+test: $(KERNEL) $(INITRD) $(DISK_IMG)
 	@bash tests/run_tests.sh
 
 clean:

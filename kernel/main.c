@@ -3,6 +3,7 @@
 #include <arch/io.h>
 #include <arch/pic.h>
 #include <arch/pit.h>
+#include <drivers/ata.h>
 #include <drivers/console.h>
 #include <drivers/keyboard.h>
 #include <drivers/rtc.h>
@@ -48,7 +49,7 @@ void kmain(uint64_t boot_magic, uint64_t boot_info_phys) {
 
     printk("\n");
     printk("====================================================\n");
-    printk("  OwnKrn 0.2.0-x86_64 (Linux-Inspired OS Kernel)\n");
+    printk("  OwnKrn 0.3.0-x86_64 (Linux-Inspired OS Kernel)\n");
     printk("====================================================\n");
 
     uint64_t rip = current_rip();
@@ -86,7 +87,8 @@ void kmain(uint64_t boot_magic, uint64_t boot_info_phys) {
     kheap_init();
     sched_init();
 
-    /* Virtual File System & initramfs */
+    /* Virtual File System, persistent ATA0 disk & initramfs */
+    ata_init();
     vfs_init();
     if (g_boot_info.initrd_size > 0) {
         initrd_unpack(g_boot_info.initrd_phys, g_boot_info.initrd_size);

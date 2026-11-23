@@ -1,6 +1,7 @@
 #include <arch/io.h>
 #include <arch/pit.h>
 #include <drivers/serial.h>
+#include <drivers/speaker.h>
 #include <drivers/tty.h>
 #include <fs/vfs.h>
 #include <kernel/errno.h>
@@ -14,6 +15,7 @@ enum dev_kind {
     DEV_TTY     = 3,
     DEV_SER     = 4,
     DEV_URANDOM = 5,
+    DEV_SPEAKER = 6,
 };
 
 struct dev_entry {
@@ -21,7 +23,7 @@ struct dev_entry {
     struct vfs_node *node;
 };
 
-static struct dev_entry g_devs[5];
+static struct dev_entry g_devs[6];
 static struct vfs_node *g_dev_root = NULL;
 static uint64_t         g_prng_state = 0x853C49E6748FEA9BULL;
 
@@ -82,6 +84,25 @@ static ssize_t dev_write(struct vfs_node *node, const void *buf, size_t len, siz
             for (size_t i = 0; i < len; i++) {
                 serial_putc(s[i]);
             }
+            return (ssize_t)len;
+        }
+        case DEV_SPEAKER: {
+            const char *s = (const char *)buf;
+            uint32_t freq = 0, ms = 0;
+            size_t i = 0;
+            while (i < len && (s[i] == ' ' || s[i] == '\t')) i++;
+            while (i < len && s[i] >= '0' && s[i] <= '9') {
+                freq = freq * 10U + (uint32_t)(s[i] - '0');
+                i++;
+            }
+            while (i < len && (s[i] == ' ' || s[i] == '\t')) i++;
+            while (i < len && s[i] >= '0' && s[i] <= '9') {
+                ms = ms * 10U + (uint32_t)(s[i] - '0');
+                i++;
+            }
+            if (freq == 0) freq = 880;
+            if (ms == 0) ms = 60;
+            speaker_beep(freq, ms);
             return (ssize_t)len;
         }
         default:
@@ -159,6 +180,7 @@ struct vfs_node *devfs_create_root(void) {
     g_devs[2] = (struct dev_entry){ "tty",     make_dev(1003, DEV_TTY,     g_dev_root) };
     g_devs[3] = (struct dev_entry){ "serial",  make_dev(1004, DEV_SER,     g_dev_root) };
     g_devs[4] = (struct dev_entry){ "urandom", make_dev(1005, DEV_URANDOM, g_dev_root) };
+    g_devs[5] = (struct dev_entry){ "speaker", make_dev(1006, DEV_SPEAKER, g_dev_root) };
 
     return g_dev_root;
 }

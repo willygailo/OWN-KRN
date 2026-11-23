@@ -4,16 +4,16 @@
 
 <br />
 
-# ⚡ OwnKrn `0.2.0-x86_64`
+# ⚡ OwnKrn `0.3.0-x86_64`
 
 **A freestanding, higher-half, Linux-inspired 64-bit operating system kernel built completely from scratch in C11 & x86_64 NASM Assembly.**
 
 <p>
   <img src="https://img.shields.io/badge/Arch-x86__64%20Long%20Mode-0ea5e9?style=for-the-badge&logo=intel&logoColor=white" alt="x86_64" />
   <img src="https://img.shields.io/badge/Language-C11%20%2B%20NASM-10b981?style=for-the-badge&logo=c&logoColor=white" alt="C11 + NASM" />
-  <img src="https://img.shields.io/badge/Boot-Multiboot2%20%7C%20PVH-8b5cf6?style=for-the-badge&logo=linux&logoColor=white" alt="Multiboot2 / PVH" />
+  <img src="https://img.shields.io/badge/Display-1024x576x32%20VBE%20LFB-8b5cf6?style=for-the-badge&logo=linux&logoColor=white" alt="1024x576x32 VBE LFB" />
   <img src="https://img.shields.io/badge/Security-W%5EX%20%2B%20SMEP%20%2B%20Ring%203-f59e0b?style=for-the-badge&logo=shield&logoColor=white" alt="W^X + SMEP + Ring 3" />
-  <img src="https://img.shields.io/badge/QEMU%20Tests-44%2F44%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
+  <img src="https://img.shields.io/badge/QEMU%20Tests-52%2F52%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
 </p>
 
 <p>
@@ -33,10 +33,10 @@
 
 ## 🖥️ Live Boot & Shell Preview
 
-OwnKrn boots directly in `qemu-system-x86_64` into 64-bit Long Mode, enforces **W^X** page permissions, unpacks a POSIX `ustar` `initrd.tar`, enters **Ring 3** as PID 1 (`/bin/init`), and launches the interactive `/bin/sh` shell:
+OwnKrn boots directly in `qemu-system-x86_64` into 64-bit Long Mode, initializes a **16:9 Widescreen 32-Bit Linear Framebuffer (`1024×576×32`, `128×36` grid)** with a live 1 Hz Top OS HUD Bar and Bottom App Dock, mounts a persistent **ATA0 28-bit LBA hard disk at `/disk`**, enters **Ring 3** as PID 1 (`/bin/init`), and launches `/bin/fetch` + the interactive `/bin/sh` shell:
 
 <div align="center">
-  <img src="assets/terminal-demo.svg" alt="OwnKrn Live QEMU Boot & Shell Session" width="94%" />
+  <img src="assets/widescreen-gui.jpg" alt="OwnKrn v0.3.0 Widescreen 1024x576x32 VBE Framebuffer & Live OS HUD" width="96%" />
 </div>
 
 ---
@@ -152,12 +152,14 @@ flowchart LR
 
 | Category | Commands |
 | :--- | :--- |
-| 🖥️ **Interactive TUI Apps** | `fetch` / `neofetch` (ASCII OS logo & live telemetry), `top` / `htop` (real-time task & memory monitor with `[k]` kill), `edit <file>` / `nano` (full-screen text editor), `snake` (playable terminal arcade game) |
+| 🖥️ **Interactive TUI Apps** | `fetch` / `neofetch` (ASCII OS logo & live telemetry), `top` / `htop` (real-time task & memory monitor with `[k]` kill), `fm [dir]` (dual-pane file manager), `edit <file>` / `nano` (full-screen text editor), `snake` (playable arcade game) |
+| 💾 **Persistent Disk (`/disk`)** | Backed by `drivers/ata.c` (28-bit LBA PIO on `build/disk.img`): `df` / `mounts` (`/proc/mounts`), `sync`, plus persistent file read/write in `/disk/*` that survives OS reboots |
 | ⌨️ **Shell Line Editor** | **Up/Down** command history (`history`), **Left/Right/Home/End/Del** cursor line editing, **Tab** auto-completion (commands + VFS paths), `Ctrl+L` clear, `Ctrl+U`/`Ctrl+W` line/word kill |
 | 📁 **Filesystem & Scripts** | `ls [-l] [dir]` / `ll`, `tree [dir]`, `stat <path>`, `cp <src> <dst>`, `mv <src> <dst>`, `head [-n N]`, `tail [-n N]`, `sh <script.sh>` / `source`, `cd`, `pwd`, `cat`, `mkdir`, `touch`, `rm` |
+| 🧮 **Utilities & Audio** | `calc <a op b>` (dec/hex arithmetic & bitwise calculator), `cal [month] [year]` (monthly calendar with RTC highlight), `beep [hz] [ms]` (PIT Ch2 PC Speaker audio via `/dev/speaker`) |
 | 🔀 **Pipelines & I/O** | Full multi-stage pipelines (`ps \| grep U3`, `cat /etc/motd \| wc`) + `<`, `>`, `>>` for both built-ins & ELF64 binaries |
 | 📊 **System & Hardware Info** | `uname [-a]`, `cpuinfo` (`/proc/cpuinfo`), `irqs` (`/proc/interrupts`), `ps` (`/proc/tasks`), `free` (`/proc/meminfo`), `uptime` (`/proc/uptime`), `date` (`/proc/rtc`) |
-| ⚡ **Ring 3 ELF64 Apps** | `fetch`, `top`, `edit`, `snake`, `hello [name]`, `grep <pat> [file]`, `wc [file]`, `hexdump [file]`, `date`, `sleep <ms>`, `selftest`, `faulttest` |
+| ⚡ **Ring 3 ELF64 Apps** | `fetch`, `top`, `fm`, `edit`, `snake`, `hello [name]`, `grep <pat> [file]`, `wc [file]`, `hexdump [file]`, `date`, `sleep <ms>`, `selftest`, `faulttest` |
 | 🔌 **Control** | `help`, `kill <pid> [sig]`, `clear` (ANSI + VBE LFB), `reboot`, `halt` / `poweroff`, `exit` |
 
 <details>

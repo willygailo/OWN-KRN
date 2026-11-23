@@ -113,6 +113,9 @@ int              vfs_setup_stdio(struct task *t);
 struct vfs_node *tmpfs_create_root(void);
 struct vfs_node *devfs_create_root(void);
 struct vfs_node *procfs_create_root(void);
+struct vfs_node *diskfs_create_root(void);
+void             diskfs_get_stats(uint32_t *out_files, uint32_t *out_max_files,
+                                  uint32_t *out_used_bytes, uint32_t *out_total_bytes);
 int              pipe_create_nodes(struct vfs_node **rnode_out, struct vfs_node **wnode_out);
 int              initrd_unpack(uint64_t phys_addr, uint64_t size);
 

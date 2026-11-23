@@ -1,6 +1,7 @@
 #include <arch/idt.h>
 #include <arch/io.h>
 #include <arch/pit.h>
+#include <drivers/ata.h>
 #include <drivers/rtc.h>
 #include <fs/vfs.h>
 #include <kernel/errno.h>
@@ -18,6 +19,7 @@ enum proc_kind {
     PROC_RTC        = 5,
     PROC_CPUINFO    = 6,
     PROC_INTERRUPTS = 7,
+    PROC_MOUNTS     = 8,
 };
 
 struct proc_entry {
@@ -25,7 +27,7 @@ struct proc_entry {
     struct vfs_node *node;
 };
 
-static struct proc_entry g_procs[7];
+static struct proc_entry g_procs[8];
 static struct vfs_node  *g_proc_root = NULL;
 
 static const char *task_state_str(enum task_state st) {
@@ -155,6 +157,21 @@ static size_t format_proc_content(enum proc_kind kind, char *buf, size_t cap) {
                 (unsigned long long)idt_get_irq_count(4),
                 (unsigned long long)idt_get_pf_count(),
                 (unsigned long long)idt_get_syscall_count());
+        case PROC_MOUNTS: {
+            struct kheap_stats hs;
+            kheap_get_stats(&hs);
+            uint32_t dfiles = 0, dmax = 0, dused = 0, dtot = 0;
+            diskfs_get_stats(&dfiles, &dmax, &dused, &dtot);
+            return (size_t)snprintf(buf, cap,
+                "FILESYSTEM   MOUNT   USED         TOTAL        STATUS\n"
+                "tmpfs        /       %-10llu B %-10llu B rw,ram\n"
+                "diskfs(ata0) /disk   %-10u B %-10u B rw,persistent (%u/%u files)\n"
+                "devfs        /dev    0 B          0 B          rw,chardev\n"
+                "procfs       /proc   0 B          0 B          ro,telemetry\n",
+                (unsigned long long)hs.used_bytes,
+                (unsigned long long)hs.mapped_bytes,
+                dused, dtot, dfiles, dmax);
+        }
         default:
             return 0;
     }
@@ -246,6 +263,7 @@ struct vfs_node *procfs_create_root(void) {
     g_procs[4] = (struct proc_entry){ "rtc",        make_proc(2005, PROC_RTC,        g_proc_root) };
     g_procs[5] = (struct proc_entry){ "cpuinfo",    make_proc(2006, PROC_CPUINFO,    g_proc_root) };
     g_procs[6] = (struct proc_entry){ "interrupts", make_proc(2007, PROC_INTERRUPTS, g_proc_root) };
+    g_procs[7] = (struct proc_entry){ "mounts",     make_proc(2008, PROC_MOUNTS,     g_proc_root) };
 
     return g_proc_root;
 }

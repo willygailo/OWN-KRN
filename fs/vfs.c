@@ -44,12 +44,14 @@ void vfs_init(void) {
     KASSERT(vfs_mkdir("/", "/tmp", 0777) == 0);
     KASSERT(vfs_mkdir("/", "/bin", 0755) == 0);
     KASSERT(vfs_mkdir("/", "/etc", 0755) == 0);
+    KASSERT(vfs_mkdir("/", "/disk", 0755) == 0);
 
     KASSERT(vfs_mount("/dev", devfs_create_root()) == 0);
     KASSERT(vfs_mount("/proc", procfs_create_root()) == 0);
+    KASSERT(vfs_mount("/disk", diskfs_create_root()) == 0);
 
     sched_set_close_fds_hook(vfs_task_close_all);
-    pr_ok("VFS initialized (root=tmpfs, /dev=devfs, /proc=procfs)\n");
+    pr_ok("VFS initialized (root=tmpfs, /dev=devfs, /proc=procfs, /disk=diskfs)\n");
 }
 
 struct vfs_node *vfs_root(void) {

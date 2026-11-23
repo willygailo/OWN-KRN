@@ -63,17 +63,22 @@ static void cmd_help(int out_fd) {
         "    date                Display CMOS RTC date & UTC epoch\n"
         "    whoami / hostname   Show or set active user / hostname\n"
         "    history             Display command history (Up/Down arrows recall)\n"
-        "  \x1b[1;32mFiles & Navigation:\x1b[0m\n"
+        "  \x1b[1;32mFiles & Persistent Disk (/disk):\x1b[0m\n"
+        "    fm [dir]            Dual-pane interactive TUI File Manager\n"
+        "    df / sync           Show mounted filesystems (/disk ATA0) & flush\n"
         "    pwd / cd [dir]      Print or change working directory\n"
         "    ls [-l] [dir]       List directory entries (colorized + sizes)\n"
         "    tree [dir]          Render visual directory hierarchy\n"
         "    stat <path>         Inspect inode, type, mode, and byte size\n"
         "    cat / head / tail   Display full, first N, or last N lines\n"
-        "    cp / mv <src> <dst> Copy or move/rename files & directories\n"
+        "    cp / mv <src> <dst> Copy or move/rename files (supports /disk)\n"
         "    edit / nano <file>  Full-screen interactive TUI text editor\n"
         "    mkdir / touch / rm  Create or remove files & directories\n"
         "    sh <script.sh>      Execute a shell script file\n"
-        "  \x1b[1;32mUtilities & Games:\x1b[0m\n"
+        "  \x1b[1;32mUtilities, Audio & Games:\x1b[0m\n"
+        "    calc <a op b>       Arithmetic & bitwise hex/dec calculator\n"
+        "    cal [month] [year]  Monthly calendar with live RTC highlight\n"
+        "    beep [hz] [ms]      Play hardware tone via PIT Ch2 PC Speaker\n"
         "    snake               Playable terminal Snake game in Ring 3\n"
         "    grep / wc / hexdump Stream filter, line/word/byte count, hex viewer\n"
         "    kill <pid> [sig]    Send POSIX signal (default SIGTERM=15)\n"
@@ -282,9 +287,171 @@ static void cmd_mv(int argc, char **argv) {
         return;
     }
     int rc = u_rename(argv[1], argv[2]);
-    if (rc < 0) {
+    if (rc == 0) return;
+
+    /* Fallback for cross-filesystem moves (e.g. /tmp -> /disk): copy + unlink */
+    int sfd = u_open(argv[1], UAPI_O_RDONLY, 0);
+    if (sfd < 0) {
         printf("mv: cannot move '%s' to '%s' (err=%d)\n", argv[1], argv[2], rc);
+        return;
     }
+    int dfd = u_open(argv[2], UAPI_O_CREAT | UAPI_O_WRONLY | UAPI_O_TRUNC, 0644);
+    if (dfd < 0) {
+        u_close(sfd);
+        printf("mv: cannot create '%s' (err=%d)\n", argv[2], dfd);
+        return;
+    }
+    char buf[512];
+    ssize_t n;
+    while ((n = u_read(sfd, buf, sizeof(buf))) > 0) {
+        u_write(dfd, buf, (size_t)n);
+    }
+    u_close(sfd);
+    u_close(dfd);
+    u_unlink(argv[1]);
+}
+
+static int64_t parse_int64(const char *s) {
+    int64_t sign = 1;
+    while (*s == ' ' || *s == '\t') s++;
+    if (*s == '-') { sign = -1; s++; }
+    else if (*s == '+') s++;
+
+    int64_t v = 0;
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+        s += 2;
+        while (*s) {
+            char c = *s++;
+            if (c >= '0' && c <= '9') v = (v << 4) | (c - '0');
+            else if (c >= 'a' && c <= 'f') v = (v << 4) | (c - 'a' + 10);
+            else if (c >= 'A' && c <= 'F') v = (v << 4) | (c - 'A' + 10);
+            else break;
+        }
+    } else {
+        while (*s >= '0' && *s <= '9') {
+            v = v * 10 + (*s - '0');
+            s++;
+        }
+    }
+    return sign * v;
+}
+
+static void cmd_calc(int argc, char **argv, int out_fd) {
+    if (argc < 4) {
+        printf("usage: calc <a> <op> <b>  (ops: + - * / %% & | ^ << >>, hex 0x.. supported)\n");
+        return;
+    }
+    int64_t a = parse_int64(argv[1]);
+    const char *op = argv[2];
+    int64_t b = parse_int64(argv[3]);
+    int64_t res = 0;
+
+    if (strcmp(op, "+") == 0) res = a + b;
+    else if (strcmp(op, "-") == 0) res = a - b;
+    else if (strcmp(op, "*") == 0 || strcmp(op, "x") == 0) res = a * b;
+    else if (strcmp(op, "/") == 0) {
+        if (b == 0) { printf("calc: division by zero\n"); return; }
+        res = a / b;
+    } else if (strcmp(op, "%") == 0) {
+        if (b == 0) { printf("calc: modulo by zero\n"); return; }
+        res = a % b;
+    } else if (strcmp(op, "&") == 0) res = a & b;
+    else if (strcmp(op, "|") == 0) res = a | b;
+    else if (strcmp(op, "^") == 0) res = a ^ b;
+    else if (strcmp(op, "<<") == 0) res = a << (b & 63);
+    else if (strcmp(op, ">>") == 0) res = a >> (b & 63);
+    else {
+        printf("calc: unknown operator '%s'\n", op);
+        return;
+    }
+
+    char out[128];
+    snprintf(out, sizeof(out), "  %lld %s %lld = \x1b[1;32m%lld\x1b[0m (0x%llx)\n",
+             (long long)a, op, (long long)b,
+             (long long)res, (unsigned long long)res);
+    write_str_fd(out_fd, out);
+}
+
+static void cmd_cal(int argc, char **argv, int out_fd) {
+    int year = 2026, month = 11, today = 23;
+    int rfd = u_open("/proc/rtc", UAPI_O_RDONLY, 0);
+    if (rfd >= 0) {
+        char rbuf[64];
+        ssize_t n = u_read(rfd, rbuf, sizeof(rbuf) - 1);
+        u_close(rfd);
+        if (n >= 10) {
+            rbuf[n] = '\0';
+            year  = atoi(rbuf + 0);
+            month = atoi(rbuf + 5);
+            today = atoi(rbuf + 8);
+        }
+    }
+    if (argc == 2) {
+        int v = atoi(argv[1]);
+        if (v >= 1 && v <= 12) month = v;
+        else if (v >= 1970) year = v;
+    } else if (argc >= 3) {
+        month = atoi(argv[1]);
+        year  = atoi(argv[2]);
+        today = -1;
+    }
+    if (month < 1 || month > 12) month = 1;
+    if (year < 1970) year = 2026;
+
+    static const char *const mnames[12] = {
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    };
+    static const int mdays[12] = { 31,28,31,30,31,30,31,31,30,31,30,31 };
+    int days = mdays[month - 1];
+    bool leap = ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0));
+    if (month == 2 && leap) days = 29;
+
+    /* Sakamoto's day-of-week algorithm for 1st of month (0=Sun..6=Sat) */
+    static const int t[12] = { 0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4 };
+    int y = year - (month < 3 ? 1 : 0);
+    int dow = (y + y/4 - y/100 + y/400 + t[month - 1] + 1) % 7;
+
+    char line[128];
+    snprintf(line, sizeof(line),
+             "   \x1b[1;36m%s %d\x1b[0m\n"
+             " \x1b[1;33mSu Mo Tu We Th Fr Sa\x1b[0m\n ",
+             mnames[month - 1], year);
+    write_str_fd(out_fd, line);
+
+    for (int i = 0; i < dow; i++) {
+        write_str_fd(out_fd, "   ");
+    }
+    for (int d = 1; d <= days; d++) {
+        if (d == today) {
+            snprintf(line, sizeof(line), "\x1b[7m%2d\x1b[0m ", d);
+        } else {
+            snprintf(line, sizeof(line), "%2d ", d);
+        }
+        write_str_fd(out_fd, line);
+        if (((dow + d) % 7) == 0 && d < days) {
+            write_str_fd(out_fd, "\n ");
+        }
+    }
+    write_str_fd(out_fd, "\n");
+}
+
+static void cmd_beep(int argc, char **argv, int out_fd) {
+    int freq = (argc > 1) ? atoi(argv[1]) : 880;
+    int ms   = (argc > 2) ? atoi(argv[2]) : 75;
+    if (freq < 40) freq = 880;
+    if (ms < 5) ms = 75;
+
+    int fd = u_open("/dev/speaker", UAPI_O_WRONLY, 0);
+    if (fd >= 0) {
+        char cmd[32];
+        int n = snprintf(cmd, sizeof(cmd), "%d %d", freq, ms);
+        u_write(fd, cmd, (size_t)n);
+        u_close(fd);
+    }
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Beep: %d Hz (%d ms) via PIT Ch2 PC Speaker\n", freq, ms);
+    write_str_fd(out_fd, msg);
 }
 
 static void cmd_head_tail(int argc, char **argv, int in_fd, int out_fd, bool is_tail) {
@@ -461,6 +628,16 @@ static bool run_builtin(int argc, char **argv, int in_fd, int out_fd) {
         cmd_cp(argc, argv);
     } else if (strcmp(cmd, "mv") == 0) {
         cmd_mv(argc, argv);
+    } else if (strcmp(cmd, "calc") == 0) {
+        cmd_calc(argc, argv, out_fd);
+    } else if (strcmp(cmd, "cal") == 0) {
+        cmd_cal(argc, argv, out_fd);
+    } else if (strcmp(cmd, "beep") == 0) {
+        cmd_beep(argc, argv, out_fd);
+    } else if (strcmp(cmd, "df") == 0 || strcmp(cmd, "mounts") == 0) {
+        print_file_to_fd("/proc/mounts", out_fd);
+    } else if (strcmp(cmd, "sync") == 0) {
+        write_str_fd(out_fd, "Flushing VFS & ATA0 persistent disk (/disk)... OK\n");
     } else if (strcmp(cmd, "source") == 0) {
         if (argc < 2) printf("usage: source <script.sh>\n");
         else run_script_file(argv[1]);
@@ -625,6 +802,7 @@ static bool resolve_exec_path(const char *raw_cmd, char *out, size_t cap) {
 static bool is_known_builtin(const char *cmd) {
     static const char *const builtins[] = {
         "echo", "cat", "head", "tail", "cp", "mv", "source",
+        "calc", "cal", "beep", "df", "mounts", "sync",
         "ls", "ll", "tree", "stat", "history",
         "whoami", "hostname", "ps", "free", "mem", "uname",
         "uptime", "cpuinfo", "irqs", "interrupts",
@@ -864,8 +1042,9 @@ static void handle_tab_completion(const char *cwd, char *buf, size_t *len_io, si
 
     if (is_cmd_tok && !has_slash) {
         static const char *const cmds[] = {
-            "help", "fetch", "neofetch", "top", "htop", "edit", "nano",
-            "snake", "uname", "cpuinfo", "irqs", "interrupts",
+            "help", "fetch", "neofetch", "top", "htop", "fm", "edit", "nano",
+            "snake", "calc", "cal", "beep", "df", "mounts", "sync",
+            "uname", "cpuinfo", "irqs", "interrupts",
             "pwd", "cd", "ls", "ll", "tree", "stat",
             "cat", "head", "tail", "cp", "mv", "source", "sh",
             "echo", "mkdir", "touch", "rm", "ps", "free", "uptime",

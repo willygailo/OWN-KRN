@@ -3,20 +3,25 @@ set -euo pipefail
 
 KERNEL="${KERNEL:-build/kernel.elf}"
 INITRD="${INITRD:-build/initrd.tar}"
+DISK="${DISK:-build/disk.img}"
 
 if [[ ! -f "$KERNEL" || ! -f "$INITRD" ]]; then
     echo "ERROR: $KERNEL or $INITRD missing; run 'make' first." >&2
     exit 1
 fi
 
-python3 - "$KERNEL" "$INITRD" <<'PY'
+if [[ ! -f "$DISK" ]]; then
+    dd if=/dev/zero of="$DISK" bs=1M count=4 status=none
+fi
+
+python3 - "$KERNEL" "$INITRD" "$DISK" <<'PY'
 import os
 import select
 import subprocess
 import sys
 import time
 
-kernel, initrd = sys.argv[1], sys.argv[2]
+kernel, initrd, disk = sys.argv[1], sys.argv[2], sys.argv[3]
 
 cmd = [
     "qemu-system-x86_64",
@@ -24,6 +29,7 @@ cmd = [
     "-cpu", "qemu64,+nx,+smep",
     "-m", "256M",
     "-no-reboot",
+    "-drive", f"file={disk},format=raw,index=0,media=disk",
     "-d", "guest_errors,cpu_reset",
     "-D", "build/qemu.log",
     "-kernel", kernel,
@@ -81,18 +87,20 @@ def expect(haystack: str, needle: str, label: str) -> None:
     print(f"  [PASS] {label}")
 
 try:
-    print("Booting OwnKrn 0.2.0 in QEMU headless (+nx,+smep)...")
+    print("Booting OwnKrn 0.3.0 in QEMU headless (+nx,+smep,ATA0)...")
     boot_out = read_until(b"ownkrn:/# ", timeout=12.0)
     expect(boot_out, "Long Mode active in higher half", "Higher-half 64-bit boot")
     expect(boot_out, "NXE=on, WP=on, SMEP=on", "CPU hardening (NXE + WP + SMEP)")
     expect(boot_out, "CMOS RTC", "CMOS RTC wall-clock init")
     expect(boot_out, "W^X enforced", "4-level VMM W^X enforcement")
+    expect(boot_out, "ATA0 Master", "ATA0 PIO 28-bit LBA hard disk initialized")
+    expect(boot_out, "/disk=diskfs", "Persistent DiskFS mounted at /disk")
     expect(boot_out, "SYSCALL/SYSRET MSRs configured", "SYSCALL/SYSRET MSR setup")
     expect(boot_out, "OWN KRN", "/bin/init launched /bin/fetch dashboard on boot")
-    expect(boot_out, "Welcome to OwnKrn 0.2.0", "/bin/init displayed /etc/motd")
+    expect(boot_out, "Welcome to OwnKrn 0.3.0", "/bin/init displayed /etc/motd")
 
     out = send_cmd("uname -a")
-    expect(out, "OwnKrn ownkrn 0.2.0", "uname -a syscall")
+    expect(out, "OwnKrn ownkrn 0.3.0", "uname -a syscall")
     expect(out, "x86_64", "uname machine architecture")
 
     out = send_cmd("neofetch")
@@ -100,6 +108,30 @@ try:
 
     out = send_cmd("top -n 1")
     expect(out, "OwnKrn Live System Monitor", "top -n 1 batch mode monitor")
+
+    out = send_cmd("fm -b /")
+    expect(out, "OwnKrn Dual-Pane File Manager", "fm -b / dual-pane file manager")
+
+    out = send_cmd("df")
+    expect(out, "diskfs(ata0) /disk", "df reports mounted persistent ATA0 /disk")
+
+    out = send_cmd("cat /disk/README.txt")
+    expect(out, "OwnKrn Persistent Disk", "read initial README.txt from persistent /disk")
+
+    out = send_cmd("echo persist-data-123 > /disk/saved.txt")
+    out = send_cmd("cat /disk/saved.txt")
+    expect(out, "persist-data-123", "write and read persistent file on ATA0 /disk")
+    out = send_cmd("sync")
+    expect(out, "Flushing VFS & ATA0", "sync command flushes persistent storage")
+
+    out = send_cmd("calc 0x20 + 10")
+    expect(out, "42", "calc evaluates hex/dec arithmetic (0x20 + 10 = 42)")
+
+    out = send_cmd("cal 11 2026")
+    expect(out, "November 2026", "cal renders monthly calendar")
+
+    out = send_cmd("beep 880 10")
+    expect(out, "PIT Ch2 PC Speaker", "beep drives PIT Channel 2 PC Speaker")
 
     out = send_cmd("tree /dev")
     expect(out, "tty", "tree command displays /dev hierarchy")

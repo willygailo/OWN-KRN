@@ -2,6 +2,7 @@
 #include <arch/pit.h>
 #include <drivers/console.h>
 #include <drivers/font8x16.h>
+#include <drivers/rtc.h>
 #include <kernel/types.h>
 #include <lib/printf.h>
 #include <lib/string.h>
@@ -205,12 +206,16 @@ static void fb_draw_top_hud(void) {
     uint64_t used_mb = (ps.total_bytes - ps.free_bytes) / (1024ULL * 1024ULL);
     uint64_t tot_mb  = ps.total_bytes / (1024ULL * 1024ULL);
 
+    struct rtc_time rt;
+    rtc_read(&rt);
+
     char telemetry[96];
     snprintf(telemetry, sizeof(telemetry),
-             "| VMM: 4-Level W^X | Up: %llus | RAM: %llu/%llu MiB | VBE: 1024x576x32",
+             "| Up: %llus | RAM: %llu/%llu MiB | UTC %02u:%02u:%02u | 1024x576x32",
              (unsigned long long)up_sec,
              (unsigned long long)used_mb,
-             (unsigned long long)tot_mb);
+             (unsigned long long)tot_mb,
+             rt.hour, rt.minute, rt.second);
 
     fb_draw_bar_str(0, 0,  " OWNKRN 0.3.0-x86_64 ", 0x00FFFFFF, pill_bg);
     fb_draw_bar_str(0, 22, "CPU: Long Mode (NX+WP+SMEP)", cyan_fg, bar_bg);
@@ -232,8 +237,8 @@ static void fb_draw_bottom_dock(void) {
 
     fb_draw_bar_str(FB_ROWS - 1, 0,  " /bin/sh ", 0x00FFFFFF, ok_bg);
     fb_draw_bar_str(FB_ROWS - 1, 10, "Apps:", yell_fg, bar_bg);
-    fb_draw_bar_str(FB_ROWS - 1, 16, "fetch (neofetch)  top (monitor)  edit (nano)  snake (game)", cyan_fg, bar_bg);
-    fb_draw_bar_str(FB_ROWS - 1, 76, "| Keys: [Up/Down] Hist [Tab] Auto [Ctrl+L] Clr", text_fg, bar_bg);
+    fb_draw_bar_str(FB_ROWS - 1, 16, "fetch  top  fm (files)  edit (nano)  snake  calc  cal  df", cyan_fg, bar_bg);
+    fb_draw_bar_str(FB_ROWS - 1, 75, "| Keys: [Up/Down] Hist [Tab] Auto [Ctrl+L] Clr", text_fg, bar_bg);
 }
 
 static void fb_draw_hud_bars(void) {

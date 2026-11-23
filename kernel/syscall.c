@@ -377,7 +377,7 @@ static int64_t sys_uname(uint64_t ubuf) {
     memset(&u, 0, sizeof(u));
     strcpy(u.sysname,  "OwnKrn");
     strcpy(u.nodename, "ownkrn");
-    strcpy(u.release,  "0.2.0");
+    strcpy(u.release,  "0.3.0");
     strcpy(u.version,  "#1 SMP PREEMPT x86_64");
     strcpy(u.machine,  "x86_64");
     return copy_to_user(ubuf, &u, sizeof(u));
