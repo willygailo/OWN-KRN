@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Display-1024x576x32%20VBE%20LFB-8b5cf6?style=for-the-badge&logo=linux&logoColor=white" alt="1024x576x32 VBE LFB" />
   <img src="https://img.shields.io/badge/Host%20OS-Linux%20%7C%20macOS%20%7C%20Windows-2563eb?style=for-the-badge&logo=githubactions&logoColor=white" alt="Linux | macOS | Windows" />
   <img src="https://img.shields.io/badge/Security-W%5EX%20%2B%20SMEP%20%2B%20Ring%203-f59e0b?style=for-the-badge&logo=shield&logoColor=white" alt="W^X + SMEP + Ring 3" />
-  <img src="https://img.shields.io/badge/QEMU%20Tests-68%2F68%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
+  <img src="https://img.shields.io/badge/QEMU%20Tests-79%2F79%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
 </p>
 
 <p>
@@ -71,8 +71,8 @@ OwnKrn boots directly in `qemu-system-x86_64` into 64-bit Long Mode, initializes
       <ul>
         <li>Hardware hardening: <code>NXE</code>, <code>CR0.WP</code> &amp; <b><code>CR4.SMEP</code></b> enabled at boot</li>
         <li><b>Bochs VBE 32-Bit Linear Framebuffer</b> (<code>1024×576×32</code>, <code>128×36</code> grid, 8×16 font &amp; live 1 Hz Top HUD Bar)</li>
-        <li><b>ATA0 28-bit LBA PIO Disk</b>, <b>PIT Ch2 PC Speaker</b>, <b>100 Hz PIT</b> &amp; <b>CMOS RTC</b></li>
-        <li><b>COM1 UART</b>, <b>PS/2 Extended Keyboard</b> &amp; <b>TTY</b> (Canonical + Raw/Non-blocking modes)</li>
+        <li><b>PCI Bus Enumeration</b> (<code>lspci</code>), <b>ATA0 28-bit LBA PIO Disk</b> (<code>lsblk</code>), <b>PIT Ch2 PC Speaker</b>, <b>100 Hz PIT</b> &amp; <b>CMOS RTC</b></li>
+        <li><b>COM1 UART</b>, <b>COM2 Host Clipboard Bridge</b> (<code>/dev/clipboard</code>), <b>PS/2 Extended Keyboard</b> &amp; <b>16 KiB TTY</b></li>
       </ul>
     </td>
     <td width="50%" valign="top">
@@ -89,19 +89,19 @@ OwnKrn boots directly in `qemu-system-x86_64` into 64-bit Long Mode, initializes
     <td width="50%" valign="top">
       <h3>🗂️ VFS, Persistent <code>/disk</code> &amp; Unix IPC</h3>
       <ul>
-        <li>Refcounted VFS core (atomic <code>rename</code>, safe open-file <code>unlink</code>), <b><code>tmpfs</code></b> &amp; <code>ustar</code> <b><code>initrd</code></b></li>
+        <li>Refcounted VFS core (atomic <code>rename</code>, <code>chmod</code>, multi-user <code>UID</code>/<code>GID</code> checks), <b><code>tmpfs</code></b> &amp; <code>ustar</code> <b><code>initrd</code></b></li>
         <li>Persistent <b><code>diskfs</code></b> mounted at <code>/disk</code> (backed by <code>build/disk.img</code> across reboots)</li>
         <li>Kernel ring-buffer <b>Unix Pipes</b> (<code>pipe</code>, <code>dup</code>, <code>dup2</code>) with EOF &amp; <code>SIGPIPE</code></li>
-        <li><b><code>devfs</code></b> (<code>null</code>, <code>zero</code>, <code>tty</code>, <code>serial</code>, <code>urandom</code>, <code>speaker</code>) &amp; <b><code>procfs</code></b> (<code>tasks</code>, <code>meminfo</code>, <code>cpuinfo</code>, <code>interrupts</code>, <code>mounts</code>, <code>uptime</code>, <code>rtc</code>, <code>version</code>)</li>
+        <li><b><code>devfs</code></b> (<code>null</code>, <code>zero</code>, <code>tty</code>, <code>serial</code>, <code>urandom</code>, <code>speaker</code>, <code>clipboard</code>) &amp; <b><code>procfs</code></b> (<code>kmsg</code>, <code>pci</code>, <code>partitions</code>, <code>config</code>, <code>tasks</code>, <code>meminfo</code>, <code>cpuinfo</code>, <code>interrupts</code>, <code>mounts</code>, <code>uptime</code>, <code>rtc</code>, <code>version</code>)</li>
       </ul>
     </td>
     <td width="50%" valign="top">
-      <h3>🛡️ Ring 3 Userspace &amp; Interactive TUI Suite</h3>
+      <h3>🛡️ Ring 3 Userspace &amp; TUI Code Studio</h3>
       <ul>
         <li>Fast <code>SYSCALL</code>/<code>SYSRET</code> MSR path with <code>swapgs</code> kernel stack switching</li>
-        <li><b>30 Linux-compatible x86_64 syscalls</b> (<code>fork</code>, <code>execve</code>, <code>ioctl</code>, <code>rename</code>, <code>pipe</code>, <code>dup2</code>, <code>kill</code>, ...)</li>
+        <li><b>39 Linux-compatible x86_64 syscalls</b> (<code>mmap</code>, <code>munmap</code>, <code>chmod</code>, <code>getuid</code>/<code>setuid</code>, <code>fork</code>, <code>execve</code>, <code>ioctl</code>, <code>rename</code>, <code>pipe</code>, <code>dup2</code>, <code>kill</code>, ...)</li>
         <li>Hardened <code>copy_from_user</code>/<code>copy_to_user</code> PTE validation (<code>-EFAULT</code> on kernel ptrs)</li>
-        <li>Interactive TUI suite: <code>fetch</code>, <code>top</code>, <code>fm</code> (file manager), <code>edit</code> (nano), <code>snake</code> &amp; <code>/bin/sh</code> (history, cursor edit, tab completion, scripts)</li>
+        <li><b>OwnKrn Code Studio</b> (<code>code</code> / <code>nano</code> / <code>edit</code> / <code>micro</code>) with live <code>.py</code>/<code>.sh</code>/<code>.c</code>/<code>.txt</code> syntax highlighting, smart auto-indent, <code>Ctrl+Shift+V</code>/<code>Ctrl+V</code> Host Copy-Paste, <code>Ctrl+T</code> templates &amp; <code>Ctrl+R</code> instant Save &amp; Run + Mini-Python 3.x runner</li>
       </ul>
     </td>
   </tr>
@@ -155,7 +155,8 @@ flowchart LR
 | :--- | :--- |
 | 🐧 **Linux Kernel & Kconfig** | `dmesg [-c]` (`[    0.000000]` kernel ring buffer `/proc/kmsg`), `lspci` (`/proc/pci`), `lsblk` (`/proc/partitions`), `kconfig` (`/proc/config`), plus `make defconfig` & interactive `make menuconfig` |
 | 🧪 **Diagnostics & Benchmark** | `tester` / `bench` / `diag` / `memtest` (interactive 6-suite TUI testbench; `tester -b` batch mode; auto-exports report to `/disk/test_report.txt`) |
-| 🖥️ **Interactive TUI Apps** | `fetch` / `neofetch` (ASCII OS logo & live telemetry), `top` / `htop` (real-time task & memory monitor with `[k]` kill), `fm [dir]` (dual-pane file manager), `edit <file>` / `nano` (full-screen text editor), `snake` (playable arcade game) |
+| 💻 **TUI Code Studio & Python** | `code <file>` / `nano` / `edit` / `micro` / `vim` (live `.py`/`.sh`/`.c`/`.txt` syntax highlighting, smart auto-indent, `Ctrl+Shift+V`/`Ctrl+V` Host Paste, `Ctrl+C` Copy, `Ctrl+A` Select All, `Ctrl+Z` Undo, `Ctrl+T` Starter Template, `Ctrl+R` Instant Save & Run, `Ctrl+F` Find), plus `python` / `python3 <script.py>` Mini-Python 3.x runner & `clip` / `paste` (`/dev/clipboard`) |
+| 🖥️ **Interactive TUI Apps** | `fetch` / `neofetch` (ASCII OS logo & live telemetry), `top` / `htop` (real-time task & memory monitor with `[k]` kill), `fm [dir]` (dual-pane file manager), `snake` (playable arcade game) |
 | 💾 **Persistent Disk (`/disk`)** | Backed by `drivers/ata.c` (28-bit LBA PIO on `build/disk.img`): `df` / `mounts` (`/proc/mounts`), `sync`, plus persistent file read/write in `/disk/*` that survives OS reboots |
 | ⌨️ **Bash-Like Shell & Jobs** | `$VAR` / `$?` / `$$` / `~` expansion, `export KEY=VAL`, `unset`, `env`, `;` and `&&` chaining, background jobs (`cmd &`, `jobs`, `fg`), **Up/Down** history, **Tab** completion |
 | 👤 **Users & Permissions** | `id` (`uid`/`gid`), `su [root\|guest]` (multi-user credential switch), `chmod <octal> <path>`, `/etc/passwd`, `/etc/group`, `/etc/os-release` |
@@ -196,7 +197,7 @@ OwnKrn's build system ([Makefile](Makefile), [scripts/mkimg.py](scripts/mkimg.py
 # 1. Install toolchain & QEMU automatically
 bash ./scripts/setup.sh
 
-# 2. Build, run 54 automated QEMU tests, and launch the Widescreen GUI
+# 2. Build, run 79 automated QEMU tests, and launch the Widescreen GUI (with Host Clipboard Bridge)
 make && make test
 make run-gui
 ```
@@ -239,9 +240,11 @@ docker run --rm -it ownkrn
 | Command | Description |
 | :--- | :--- |
 | `make` | Compiles `build/kernel.elf`, all `user/` ELF64 binaries, `build/initrd.tar`, and 4 MiB `build/disk.img` |
-| `make test` | Runs [tests/run_tests.py](tests/run_tests.py) (54 cross-platform automated QEMU assertions) |
-| `make run` | Boots OwnKrn interactively in headless terminal mode (`-display none -serial stdio`) |
-| `make run-gui` | Boots OwnKrn in 16:9 Widescreen `1024×576×32` VBE GUI mode (`gtk` / `cocoa` / `sdl` + `usb-tablet`) |
+| `make defconfig` | Generates `.config` and `include/generated/autoconf.h` from `configs/x86_64_defconfig` |
+| `make menuconfig` | Launches the interactive Linux-style `Kconfig` curses configuration menu |
+| `make test` | Runs [tests/run_tests.py](tests/run_tests.py) (79 cross-platform automated QEMU assertions) |
+| `make run` | Boots OwnKrn interactively in headless terminal mode (`-display none -serial stdio` + COM2 clipboard bridge) |
+| `make run-gui` | Boots OwnKrn in 16:9 Widescreen `1024×576×32` VBE GUI mode (`gtk` / `cocoa` / `sdl` + `usb-tablet` + COM2 Host Clipboard Bridge) |
 | `make debug` | Pauses QEMU with GDB stub listening on `tcp::1234` |
 | `make iso` | Builds a bootable Multiboot2 `build/kernel.iso` (requires `grub-mkrescue` + `xorriso`) |
 | `make clean` | Removes `build/` artifacts |
@@ -259,20 +262,21 @@ docker run --rm -it ownkrn
 
 ```text
 OWN KRN/
-├── ⚙️ Makefile                 # Cross-platform build (Linux, macOS, Windows), initrd, disk.img & QEMU
+├── ⚙️ Makefile                 # Cross-platform build (Linux, macOS, Windows), Kconfig, initrd, disk.img & QEMU
+├── 🐧 Kconfig                  # Linux-style kernel configuration schema (configs/x86_64_defconfig)
 ├── 🐳 Dockerfile               # Reproducible zero-setup container build & test runner
-├── 🛠️ scripts/                 # setup.sh (Linux/macOS), build.ps1 & build.bat (Windows), mkimg.py
+├── 🛠️ scripts/                 # setup.sh, build.ps1, build.bat, mkimg.py, kconfig.py, clipboard_bridge.py
 ├── 🗺️ linker/kernel.ld         # Higher-half ELF64 linker script (W^X PHDRS)
 ├── 🥾 boot/grub/grub.cfg       # GRUB2 Multiboot2 ISO configuration
 ├── 🏗️ arch/x86_64/             # boot.asm, GDT/TSS, IDT/ISR, PIC, PIT, switch.asm, syscall.asm
-├── 🧬 kernel/                  # main, panic, printk, bootinfo, sched, elf, syscall
-├── 🧠 mm/                      # pmm (bitmap), vmm (4-level W^X), kmalloc (canary heap)
-├── 🗂️ fs/                      # vfs, tmpfs, diskfs (ATA0 /disk), pipe, initrd (ustar), devfs, procfs
-├── 🔌 drivers/                 # console (VBE 1024x576x32 + HUD), ata (PIO LBA), speaker, rtc, keyboard, tty, serial
+├── 🧬 kernel/                  # main, panic, printk (16 KiB dmesg ring), bootinfo, sched, elf, syscall
+├── 🧠 mm/                      # pmm (bitmap), vmm (4-level W^X + mmap), kmalloc (canary heap)
+├── 🗂️ fs/                      # vfs, tmpfs, diskfs (ATA0 /disk), pipe, initrd (ustar), devfs (/dev/clipboard), procfs
+├── 🔌 drivers/                 # console (VBE 1024x576x32 + HUD), pci, ata (PIO LBA), speaker, rtc, keyboard, tty, serial (COM1/COM2)
 ├── 📚 lib/                     # Freestanding string & vsnprintf
 ├── 📑 include/                 # Kernel headers, font8x16.h & shared include/uapi/syscall.h
-├── 👤 user/                    # user.ld, libc, init, sh (history + tab-complete), fetch, top, fm, edit, snake, coreutils
-├── ✅ tests/                   # run_tests.py (54-check threaded cross-platform runner) & run_tests.sh
+├── 👤 user/                    # user.ld, libc, init, sh (Python runner + jobs), tester, fetch, top, fm, edit (Code Studio), snake
+├── ✅ tests/                   # run_tests.py (79-check threaded cross-platform runner) & run_tests.sh
 └── 🖼️ assets/                  # Hero banner, architecture diagram & widescreen-gui.jpg preview
 ```
 
@@ -290,7 +294,7 @@ OWN KRN/
 - [x] **Phase 7** — Freestanding `user/libc`, PID 1 `/bin/init`, interactive `/bin/sh`, automated QEMU E2E tests & documentation
 - [x] **v0.2.0 Hardening & Unix IPC** — Refcounted VFS/tmpfs, `CR4.SMEP`, CMOS RTC (`date`), `pipe`/`dup`/`dup2` + shell pipelines (`|`, `<`, `>`, `>>`), POSIX `kill`/`SIGINT`, Ring 3 fault containment, `grep`/`wc`/`hexdump`/`sleep` & GitHub Actions CI (32/32 tests passing)
 - [x] **v0.3.0 Widescreen VBE GUI, Persistent `/disk`, TUI Suite & Cross-Platform Support** — Bochs VBE `1024×576×32` linear framebuffer (`128×36` grid + live 1 Hz Top HUD Bar & Bottom Dock), ATA0 28-bit LBA persistent `/disk` (`diskfs`), PIT Ch2 PC Speaker (`beep`), raw/non-blocking `SYS_ioctl` TTY, `SYS_rename` (`mv`/`cp`), shell line editing (arrow history + tab completion + scripts), `fetch`/`top`/`fm`/`edit`/`snake`/`calc`/`cal`, `/dev/urandom`, `/proc/cpuinfo`/`interrupts`/`mounts`, and Linux/macOS/Windows/Docker support (54/54 tests passing)
-- [x] **v0.4.0 `torvalds/linux`-Style Kconfig, `dmesg`, PCI Bus, `mmap`, Multi-User `UID`/`GID`, Bash Jobs & `/bin/tester`** — `Kconfig`/`.config` + `make defconfig` & interactive `make menuconfig` + `/proc/config`, 16 KiB `[    0.000000]` `dmesg` ring buffer (`/proc/kmsg`), PCI Bus hardware enumeration (`lspci`, `/proc/pci`) & block partition table (`lsblk`, `/proc/partitions`), `SYS_mmap`/`SYS_munmap`, multi-user `UID`/`GID` credentials (`id`, `su root/guest`, `chmod`) + Linux FHS (`/etc/os-release`, `/etc/passwd`), `$VAR`/`$?` expansion + `;`/`&&` chaining + background jobs (`&`, `jobs`, `fg`), `find`/`sort`/`uniq`/`which`, and 6-suite interactive `/bin/tester` testbench saving reports to `/disk/test_report.txt` (68/68 tests passing)
+- [x] **v0.4.0 `torvalds/linux`-Style Kconfig, `dmesg`, PCI Bus, `mmap`, Multi-User `UID`/`GID`, TUI Code Studio & Host Clipboard Bridge** — `Kconfig`/`.config` + `make defconfig` & interactive `make menuconfig` + `/proc/config`, 16 KiB `[    0.000000]` `dmesg` ring buffer (`/proc/kmsg`), PCI Bus hardware enumeration (`lspci`, `/proc/pci`) & block partition table (`lsblk`, `/proc/partitions`), `SYS_mmap`/`SYS_munmap`, multi-user `UID`/`GID` credentials (`id`, `su root/guest`, `chmod`) + Linux FHS (`/etc/os-release`, `/etc/passwd`), `$VAR`/`$?` expansion + `;`/`&&` chaining + background jobs (`&`, `jobs`, `fg`), `find`/`sort`/`uniq`/`which`, COM2 Host-to-GUI Clipboard Bridge (`/dev/clipboard`, `clip`/`paste`, `scripts/clipboard_bridge.py`), OwnKrn TUI Code Studio (`code`/`nano`/`edit`/`micro` with `.py`/`.sh`/`.c`/`.txt` syntax highlighting, auto-indent, `Ctrl+Shift+V`/`Ctrl+V` Paste, `Ctrl+T` Templates & `Ctrl+R` Save & Run + Mini-Python 3.x runner), and 6-suite `/bin/tester` testbench (79/79 tests passing)
 
 ---
 
