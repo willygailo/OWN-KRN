@@ -74,6 +74,8 @@ DISK_IMG  := $(BUILD_DIR)/disk.img
 # Freestanding Higher-Half Kernel Flags
 CFLAGS := \
 	-std=gnu11 \
+	-march=x86-64 \
+	-mtune=generic \
 	-ffreestanding \
 	-nostdlib \
 	-nostdinc \
@@ -103,6 +105,8 @@ CFLAGS := \
 # Freestanding Ring 3 Userspace Flags
 USER_CFLAGS := \
 	-std=gnu11 \
+	-march=x86-64 \
+	-mtune=generic \
 	-ffreestanding \
 	-nostdlib \
 	-nostdinc \
