@@ -15,6 +15,7 @@ import time
 
 g_clip_lock = threading.Lock()
 g_cached_clip = ""
+g_last_host_clip = ""
 
 
 def read_host_clipboard_now() -> str:
@@ -62,7 +63,7 @@ def read_host_clipboard_now() -> str:
 
 def set_host_clipboard(text: str) -> None:
     """Write text to the Host OS clipboard across Linux, macOS, and Windows."""
-    global g_cached_clip
+    global g_cached_clip, g_last_host_clip
     with g_clip_lock:
         g_cached_clip = text
 
@@ -77,7 +78,7 @@ def set_host_clipboard(text: str) -> None:
     for cmd in cmds:
         if shutil.which(cmd[0]):
             try:
-                subprocess.run(
+                res = subprocess.run(
                     cmd,
                     input=data,
                     stdout=subprocess.DEVNULL,
@@ -85,19 +86,30 @@ def set_host_clipboard(text: str) -> None:
                     timeout=0.8,
                     check=False,
                 )
+                if res.returncode == 0:
+                    with g_clip_lock:
+                        g_last_host_clip = text
                 return
             except Exception:
                 pass
 
 
+def refresh_from_host_if_changed() -> str:
+    """Update g_cached_clip only when the Host OS clipboard actually changed,
+    so guest-to-guest copies (Ctrl+A -> Ctrl+C inside nano) are never overwritten."""
+    global g_cached_clip, g_last_host_clip
+    txt = read_host_clipboard_now()
+    with g_clip_lock:
+        if txt and txt != g_last_host_clip:
+            g_last_host_clip = txt
+            g_cached_clip = txt
+        return g_cached_clip
+
+
 def clipboard_poller_loop() -> None:
-    """Continuously cache the Host OS clipboard in the background."""
-    global g_cached_clip
+    """Continuously track Host OS clipboard changes in the background."""
     while True:
-        txt = read_host_clipboard_now()
-        if txt:
-            with g_clip_lock:
-                g_cached_clip = txt
+        refresh_from_host_if_changed()
         time.sleep(0.25)
 
 
@@ -147,14 +159,7 @@ def handle_com2_client(conn: socket.socket) -> None:
                 break
             if triggered:
                 enq_event.clear()
-                # Refresh right now on explicit Ctrl+V / ENQ
-                fresh = read_host_clipboard_now()
-                if fresh:
-                    with g_clip_lock:
-                        global g_cached_clip
-                        g_cached_clip = fresh
-                with g_clip_lock:
-                    clip = g_cached_clip
+                clip = refresh_from_host_if_changed()
                 try:
                     push_clipboard_frame(clip)
                     last_pushed = clip
