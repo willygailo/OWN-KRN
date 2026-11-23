@@ -47,6 +47,10 @@ int u_pipe(int pipefd[2]) {
     return (int)u_syscall(SYS_pipe, (uint64_t)(uintptr_t)pipefd, 0, 0, 0, 0, 0);
 }
 
+int u_sched_yield(void) {
+    return (int)u_syscall(SYS_sched_yield, 0, 0, 0, 0, 0, 0);
+}
+
 int u_dup(int oldfd) {
     return (int)u_syscall(SYS_dup, (uint64_t)oldfd, 0, 0, 0, 0, 0);
 }

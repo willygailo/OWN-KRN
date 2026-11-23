@@ -24,6 +24,7 @@ int     u_fstat(int fd, struct uapi_stat *st);
 off_t   u_lseek(int fd, off_t off, int whence);
 void   *u_sbrk(intptr_t inc);
 int     u_pipe(int pipefd[2]);
+int     u_sched_yield(void);
 int     u_dup(int oldfd);
 int     u_dup2(int oldfd, int newfd);
 pid_t   u_getpid(void);

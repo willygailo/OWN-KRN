@@ -26,11 +26,18 @@ Every contribution—from low-level x86_64 drivers and syscalls to userspace uti
    git clone https://github.com/willygailo/OWN-KRN.git
    cd OWN-KRN
    ```
-2. **Verify your toolchain**:
+2. **Install & verify your toolchain (Linux, macOS, or Windows)**:
    ```bash
+   # Linux or macOS (Homebrew):
+   bash ./scripts/setup.sh
+
+   # Windows (PowerShell):
+   .\scripts\build.ps1 setup
+
+   # Verify detected compiler, linker & QEMU display:
    make check-tools
    ```
-   Required tools: `gcc`, `ld`, `nasm`, `make`, `tar`, `qemu-system-x86_64`, `python3` (plus `gdb` for debugging and `grub-mkrescue` + `xorriso` + `mtools` for `make iso`).
+   Required tools: `x86_64-elf-gcc` / `x86_64-linux-gnu-gcc` / `gcc` (or `clang`), `ld`, `nasm`, `make`, `python3`, `qemu-system-x86_64` (plus `gdb` for debugging and `grub-mkrescue` + `xorriso` for `make iso`).
 3. **Create a feature branch**:
    ```bash
    git checkout -b feat/your-feature-name
@@ -63,11 +70,11 @@ Because OwnKrn is a **freestanding higher-half x86_64 kernel**, please keep thes
 
 | Area | Ideas |
 | :--- | :--- |
-| 🔌 **Drivers** | VirtIO-blk / ATA PIO disk driver, framebuffer graphics console, PCI bus enumeration, RTC wall clock |
-| 🗂️ **Filesystems** | `ext2` / `FAT32` driver on block devices, pipes (`pipe` + `dup2`), symbolic links |
-| ⚙️ **Kernel Core** | APIC / IOAPIC + SMP multi-core bringup, copy-on-write `fork()`, POSIX signals (`kill`, `sigaction`) |
-| 🐚 **Userspace** | Pipe (`\|`) support in `/bin/sh`, line editing / command history, additional `/bin/*` coreutils (`grep`, `wc`, `hexdump`) |
-| 🧪 **Testing** | Additional regression cases in `tests/run_tests.sh` for fault isolation, memory stress, and edge cases |
+| 🔌 **Drivers** | VirtIO-blk / VirtIO-net PCI drivers, AC97 / HDA audio, AHCI SATA controller, USB HID |
+| 🗂️ **Filesystems** | Subdirectories & larger extents in `diskfs` (`/disk`), `ext2` / `FAT32` mount support, symbolic links |
+| ⚙️ **Kernel Core** | APIC / IOAPIC + SMP multi-core bringup, copy-on-write `fork()`, `mmap` / `munmap`, user signal handlers (`sigaction`) |
+| 🐚 **Userspace** | Multi-TTY virtual consoles (`Alt+F1..F4`), environment variables (`export` / `$PATH`), job control (`&`, `fg`, `bg`), additional TUI apps |
+| 🧪 **Testing** | Additional regression cases in `tests/run_tests.py` for persistence across reboots, memory stress, and edge cases |
 
 ---
 

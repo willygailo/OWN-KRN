@@ -23,7 +23,7 @@
   <a href="#-system-architecture">🏗️ Architecture</a> •
   <a href="#-memory-map">🗺️ Memory Map</a> •
   <a href="#-shell--syscalls">🐚 Shell & Syscalls</a> •
-  <a href="#-quick-start">🚀 Quick Start</a> •
+  <a href="#-quick-start-linux-macos-windows--docker">🚀 Quick Start</a> •
   <a href="#-project-layout">📂 Layout</a> •
   <a href="#-contributing--contributors">🤝 Contributing</a>
 </p>
@@ -47,12 +47,12 @@ OwnKrn boots directly in `qemu-system-x86_64` into 64-bit Long Mode, initializes
 <table>
   <tr>
     <td width="50%" valign="top">
-      <h3>🚀 Higher-Half 64-Bit Bootstrap</h3>
+      <h3>🚀 Higher-Half 64-Bit &amp; Cross-Platform</h3>
       <ul>
         <li>Dual-boot <b>Multiboot2</b> (GRUB2 ISO) &amp; <b>QEMU PVH ELF64</b> (<code>-kernel</code>)</li>
         <li>Custom 32→64-bit Long Mode trampoline with CPUID &amp; <code>NXE</code></li>
         <li>Linked cleanly in the top 2 GiB (<code>0xFFFFFFFF80200000</code>)</li>
-        <li>Zero host libc dependencies (<code>-ffreestanding -Wall -Wextra -Werror</code>)</li>
+        <li>Builds &amp; runs on <b>Linux</b>, <b>macOS</b> (Intel/Apple Silicon), <b>Windows</b> &amp; <b>Docker</b></li>
       </ul>
     </td>
     <td width="50%" valign="top">
@@ -67,12 +67,12 @@ OwnKrn boots directly in `qemu-system-x86_64` into 64-bit Long Mode, initializes
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>⚙️ CPU Tables, IRQs &amp; Drivers</h3>
+      <h3>⚙️ CPU, Widescreen VBE &amp; Hardware Drivers</h3>
       <ul>
         <li>Hardware hardening: <code>NXE</code>, <code>CR0.WP</code> &amp; <b><code>CR4.SMEP</code></b> enabled at boot</li>
-        <li>64-bit <b>GDT + TSS</b> (<code>RSP0</code> switching + <code>IST1</code> isolated double-fault stack) &amp; 256-entry <b>IDT</b></li>
-        <li>Remapped <b>8259 PIC</b>, <b>100 Hz PIT</b> timer &amp; <b>CMOS RTC</b> wall-clock (<code>/proc/rtc</code>)</li>
-        <li><b>COM1 UART</b>, <b>VGA Console</b> (ANSI colors + clear), <b>PS/2 Keyboard</b> &amp; <b>TTY</b> (<code>Ctrl+C</code>/<code>Ctrl+D</code>)</li>
+        <li><b>Bochs VBE 32-Bit Linear Framebuffer</b> (<code>1024×576×32</code>, <code>128×36</code> grid, 8×16 font &amp; live 1 Hz Top HUD Bar)</li>
+        <li><b>ATA0 28-bit LBA PIO Disk</b>, <b>PIT Ch2 PC Speaker</b>, <b>100 Hz PIT</b> &amp; <b>CMOS RTC</b></li>
+        <li><b>COM1 UART</b>, <b>PS/2 Extended Keyboard</b> &amp; <b>TTY</b> (Canonical + Raw/Non-blocking modes)</li>
       </ul>
     </td>
     <td width="50%" valign="top">
@@ -87,21 +87,21 @@ OwnKrn boots directly in `qemu-system-x86_64` into 64-bit Long Mode, initializes
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>🗂️ Virtual File System &amp; Unix IPC</h3>
+      <h3>🗂️ VFS, Persistent <code>/disk</code> &amp; Unix IPC</h3>
       <ul>
-        <li>Refcounted VFS core (safe open-file <code>unlink</code>), spinlock-safe <b><code>tmpfs</code></b> &amp; <code>ustar</code> <b><code>initrd</code></b></li>
+        <li>Refcounted VFS core (atomic <code>rename</code>, safe open-file <code>unlink</code>), <b><code>tmpfs</code></b> &amp; <code>ustar</code> <b><code>initrd</code></b></li>
+        <li>Persistent <b><code>diskfs</code></b> mounted at <code>/disk</code> (backed by <code>build/disk.img</code> across reboots)</li>
         <li>Kernel ring-buffer <b>Unix Pipes</b> (<code>pipe</code>, <code>dup</code>, <code>dup2</code>) with EOF &amp; <code>SIGPIPE</code></li>
-        <li><b><code>devfs</code></b> (<code>/dev/null</code>, <code>zero</code>, <code>tty</code>, <code>serial</code>)</li>
-        <li>Live <b><code>procfs</code></b> (<code>/proc/tasks</code>, <code>meminfo</code>, <code>uptime</code>, <code>rtc</code>, <code>version</code>)</li>
+        <li><b><code>devfs</code></b> (<code>null</code>, <code>zero</code>, <code>tty</code>, <code>serial</code>, <code>urandom</code>, <code>speaker</code>) &amp; <b><code>procfs</code></b> (<code>tasks</code>, <code>meminfo</code>, <code>cpuinfo</code>, <code>interrupts</code>, <code>mounts</code>, <code>uptime</code>, <code>rtc</code>, <code>version</code>)</li>
       </ul>
     </td>
     <td width="50%" valign="top">
-      <h3>🛡️ Ring 3 Userspace &amp; ELF64</h3>
+      <h3>🛡️ Ring 3 Userspace &amp; Interactive TUI Suite</h3>
       <ul>
         <li>Fast <code>SYSCALL</code>/<code>SYSRET</code> MSR path with <code>swapgs</code> kernel stack switching</li>
-        <li><b>28 Linux-compatible x86_64 syscalls</b> (<code>fork</code>, <code>execve</code>, <code>pipe</code>, <code>dup2</code>, <code>kill</code>, <code>clock_gettime</code>, ...)</li>
+        <li><b>30 Linux-compatible x86_64 syscalls</b> (<code>fork</code>, <code>execve</code>, <code>ioctl</code>, <code>rename</code>, <code>pipe</code>, <code>dup2</code>, <code>kill</code>, ...)</li>
         <li>Hardened <code>copy_from_user</code>/<code>copy_to_user</code> PTE validation (<code>-EFAULT</code> on kernel ptrs)</li>
-        <li>Static <b>ELF64</b> loader, coalescing <code>user/libc</code>, <code>/bin/init</code>, <code>/bin/sh</code> &amp; coreutils</li>
+        <li>Interactive TUI suite: <code>fetch</code>, <code>top</code>, <code>fm</code> (file manager), <code>edit</code> (nano), <code>snake</code> &amp; <code>/bin/sh</code> (history, cursor edit, tab completion, scripts)</li>
       </ul>
     </td>
   </tr>
@@ -121,11 +121,11 @@ OwnKrn boots directly in `qemu-system-x86_64` into 64-bit Long Mode, initializes
 ```mermaid
 flowchart LR
     A["🔌 QEMU / GRUB2<br/>(PVH or Multiboot2)"] --> B["⚡ boot.asm<br/>32→64-bit Long Mode<br/>Higher-Half Jump"]
-    B --> C["🧱 Core Arch<br/>GDT/TSS · IDT · PIC · PIT<br/>COM1 · VGA · PS/2 · TTY"]
-    C --> D["🧠 Memory & Sched<br/>PMM · VMM (W^X)<br/>kmalloc · RR Sched"]
-    D --> E["🗂️ VFS & Initrd<br/>tmpfs · devfs · procfs<br/>Unpack initrd.tar"]
-    E --> F["🛡️ SYSCALL/SYSRET<br/>ELF64 Loader<br/>Spawn PID 1"]
-    F --> G["🐚 Ring 3 Userspace<br/>/bin/init → /bin/sh<br/>External ELF64 Apps"]
+    B --> C["🧱 Core & Display<br/>GDT/TSS · IDT · PIC · PIT · RTC<br/>VBE 1024x576x32 · PS/2 · TTY"]
+    C --> D["🧠 Memory & Sched<br/>PMM · VMM (W^X + SMEP)<br/>kmalloc · RR Scheduler"]
+    D --> E["🗂️ VFS & ATA0 Disk<br/>tmpfs · diskfs (/disk)<br/>devfs · procfs · initrd.tar"]
+    E --> F["🛡️ SYSCALL/SYSRET<br/>ELF64 Loader<br/>Spawn PID 1 (/bin/init)"]
+    F --> G["🐚 Ring 3 TUI Userspace<br/>/bin/fetch → /bin/sh<br/>top · fm · edit · snake"]
 ```
 
 </details>
@@ -254,19 +254,21 @@ docker run --rm -it ownkrn
 
 ```text
 OWN KRN/
-├── ⚙️ Makefile                 # Kernel, Ring 3 userspace, initrd.tar, ISO & QEMU targets
+├── ⚙️ Makefile                 # Cross-platform build (Linux, macOS, Windows), initrd, disk.img & QEMU
+├── 🐳 Dockerfile               # Reproducible zero-setup container build & test runner
+├── 🛠️ scripts/                 # setup.sh (Linux/macOS), build.ps1 & build.bat (Windows), mkimg.py
 ├── 🗺️ linker/kernel.ld         # Higher-half ELF64 linker script (W^X PHDRS)
-├── 🥾 boot/grub/grub.cfg       # GRUB2 Multiboot2 configuration
+├── 🥾 boot/grub/grub.cfg       # GRUB2 Multiboot2 ISO configuration
 ├── 🏗️ arch/x86_64/             # boot.asm, GDT/TSS, IDT/ISR, PIC, PIT, switch.asm, syscall.asm
 ├── 🧬 kernel/                  # main, panic, printk, bootinfo, sched, elf, syscall
 ├── 🧠 mm/                      # pmm (bitmap), vmm (4-level W^X), kmalloc (canary heap)
-├── 🗂️ fs/                      # vfs, tmpfs, initrd (ustar), devfs, procfs
-├── 🔌 drivers/                 # serial (COM1), console (VGA + ANSI), keyboard (PS/2), tty
+├── 🗂️ fs/                      # vfs, tmpfs, diskfs (ATA0 /disk), pipe, initrd (ustar), devfs, procfs
+├── 🔌 drivers/                 # console (VBE 1024x576x32 + HUD), ata (PIO LBA), speaker, rtc, keyboard, tty, serial
 ├── 📚 lib/                     # Freestanding string & vsnprintf
-├── 📑 include/                 # Kernel headers + shared include/uapi/syscall.h
-├── 👤 user/                    # user.ld, freestanding libc, /bin/init, /bin/sh, hello, selftest
-├── ✅ tests/run_tests.sh       # Automated headless QEMU end-to-end verification suite
-└── 🖼️ assets/                  # Hero banner, architecture infographic & terminal preview
+├── 📑 include/                 # Kernel headers, font8x16.h & shared include/uapi/syscall.h
+├── 👤 user/                    # user.ld, libc, init, sh (history + tab-complete), fetch, top, fm, edit, snake, coreutils
+├── ✅ tests/                   # run_tests.py (54-check threaded cross-platform runner) & run_tests.sh
+└── 🖼️ assets/                  # Hero banner, architecture diagram & widescreen-gui.jpg preview
 ```
 
 ---
@@ -282,6 +284,7 @@ OWN KRN/
 - [x] **Phase 6** — `SYSCALL`/`SYSRET` MSR path, `copy_from/to_user` (`-EFAULT`), static ELF64 loader, `fork()` & `execve()`
 - [x] **Phase 7** — Freestanding `user/libc`, PID 1 `/bin/init`, interactive `/bin/sh`, automated QEMU E2E tests & documentation
 - [x] **v0.2.0 Hardening & Unix IPC** — Refcounted VFS/tmpfs, `CR4.SMEP`, CMOS RTC (`date`), `pipe`/`dup`/`dup2` + shell pipelines (`|`, `<`, `>`, `>>`), POSIX `kill`/`SIGINT`, Ring 3 fault containment, `grep`/`wc`/`hexdump`/`sleep` & GitHub Actions CI (32/32 tests passing)
+- [x] **v0.3.0 Widescreen VBE GUI, Persistent `/disk`, TUI Suite & Cross-Platform Support** — Bochs VBE `1024×576×32` linear framebuffer (`128×36` grid + live 1 Hz Top HUD Bar & Bottom Dock), ATA0 28-bit LBA persistent `/disk` (`diskfs`), PIT Ch2 PC Speaker (`beep`), raw/non-blocking `SYS_ioctl` TTY, `SYS_rename` (`mv`/`cp`), shell line editing (arrow history + tab completion + scripts), `fetch`/`top`/`fm`/`edit`/`snake`/`calc`/`cal`, `/dev/urandom`, `/proc/cpuinfo`/`interrupts`/`mounts`, and Linux/macOS/Windows/Docker support (54/54 tests passing)
 
 ---
 

@@ -17,11 +17,11 @@
    - Validates CPUID + 64-bit Long Mode, builds initial boot page tables mapping low memory, HHDM (`0xFFFF800000000000`), and higher-half kernel (`0xFFFFFFFF80000000`), enables `PAE`, `EFER.LME | EFER.NXE`, and `CR0.PG | CR0.WP`.
    - Loads a 64-bit GDT, jumps into higher-half `.text`, zeroes `.bss`, switches to a 32 KiB higher-half kernel stack, and calls `kmain(boot_magic, boot_info_phys)`.
 2. **Kernel Initialization (`kernel/main.c`)**:
-   - Initializes COM1 serial (`0x3F8`) and VGA console (`0xB8000` via HHDM).
+   - Initializes COM1 serial (`0x3F8`) and the **Bochs VBE 32-Bit Linear Framebuffer (`1024×576×32`, `128×36` grid)** via PCI BAR0 discovery (`0x1234:0x1111`, ports `0x01CE`/`0x01CF`), falling back to `0xB8000` VGA text console when VBE is absent.
    - Normalizes Multiboot2 or PVH boot information (`kernel/bootinfo.c`) into E820 memory map + initrd physical range.
-   - Installs final 64-bit GDT + TSS (`IST1` double-fault stack), 256-entry IDT, remapped 8259 PIC (`32..47`), 100 Hz PIT (`IRQ0`), PS/2 keyboard (`IRQ1`), COM1 RX (`IRQ4`), and TTY line discipline.
+   - Installs final 64-bit GDT + TSS (`IST1` double-fault stack), 256-entry IDT, remapped 8259 PIC (`32..47`), 100 Hz PIT (`IRQ0` + 1 Hz live Top HUD clock updater), PS/2 extended keyboard (`IRQ1`), COM1 RX (`IRQ4`), and TTY line discipline (canonical + raw/non-blocking modes).
    - Brings up PMM (`mm/pmm.c`), clean W^X VMM (`mm/vmm.c`, unmapping low identity memory), dynamic kernel heap (`mm/kmalloc.c`), and preemptive round-robin scheduler (`kernel/sched.c`) with `IA32_GS_BASE` anchored to `struct cpu_local`.
-   - Mounts `tmpfs` at `/`, `devfs` at `/dev`, `procfs` at `/proc`, and unpacks `initrd.tar` into `/`.
+   - Probes Primary Master ATA0 28-bit LBA PIO disk (`drivers/ata.c`), mounts `tmpfs` at `/`, `devfs` at `/dev` (`null`, `zero`, `tty`, `serial`, `urandom`, `speaker`), `procfs` at `/proc` (`version`, `meminfo`, `uptime`, `tasks`, `rtc`, `cpuinfo`, `interrupts`, `mounts`), persistent `diskfs` at `/disk` (`fs/diskfs.c`), and unpacks `initrd.tar` into `/`.
    - Configures `IA32_EFER.SCE`, `IA32_STAR`, `IA32_LSTAR`, and `IA32_FMASK`, then loads `/bin/init` (PID 1) into Ring 3 via `elf_spawn_user_process()`.
 
 ## GDT & `SYSCALL`/`SYSRET` Invariant
@@ -54,6 +54,7 @@ Uses Linux x86_64 calling convention (`RAX` = number; `RDI, RSI, RDX, R10, R8, R
 | 5 | `fstat` | Stat open file descriptor |
 | 8 | `lseek` | Reposition file offset |
 | 12 | `brk` | Grow/shrink user heap |
+| 16 | `ioctl` | Get/set TTY mode (`OWNKRN_TIOCGETM`/`TIOCSETM`: `TTY_MODE_CANON`, `TTY_MODE_RAW`, `TTY_MODE_NONBLOCK`) |
 | 22 | `pipe` | Create unidirectional kernel ring-buffer pipe (`pipefd[2]`) |
 | 24 | `sched_yield` | Voluntarily yield CPU |
 | 32 | `dup` | Duplicate file descriptor to lowest free slot |
@@ -62,13 +63,14 @@ Uses Linux x86_64 calling convention (`RAX` = number; `RDI, RSI, RDX, R10, R8, R
 | 39 | `getpid` | Get current process ID |
 | 57 | `fork` | Clone process address space, FDs, and register frame |
 | 59 | `execve` | Replace address space with static ELF64 binary + `argv` |
-| 60 | `exit` | Terminate process with exit status |
+| 60 | `exit` | Terminate process with exit status (auto-restores canonical TTY mode) |
 | 61 | `wait4` | Wait for and reap zombie child process (`WNOHANG` supported) |
 | 62 | `kill` | Deliver POSIX signal (`SIGINT`, `SIGTERM`, `SIGKILL`, `SIGPIPE`) |
 | 63 | `uname` | Return `struct utsname` kernel identification |
 | 78 | `getdents` | Read directory entries (`struct uapi_dirent`) |
 | 79 | `getcwd` | Get current working directory |
 | 80 | `chdir` | Change working directory |
+| 82 | `rename` | Atomically move/rename file or directory entry across `tmpfs` |
 | 83 | `mkdir` | Create directory |
 | 87 | `unlink` | Remove directory entry (refcounted inode cleanup) |
 | 110 | `getppid` | Get parent process ID |
