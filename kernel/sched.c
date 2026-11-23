@@ -1,6 +1,7 @@
 #include <arch/gdt.h>
 #include <arch/io.h>
 #include <arch/pit.h>
+#include <drivers/tty.h>
 #include <kernel/errno.h>
 #include <kernel/panic.h>
 #include <kernel/printk.h>
@@ -9,6 +10,7 @@
 #include <lib/string.h>
 #include <mm/kmalloc.h>
 #include <mm/vmm.h>
+#include <uapi/syscall.h>
 
 #define MSR_GS_BASE        0xC0000101U
 #define MSR_KERNEL_GS_BASE 0xC0000102U
@@ -275,6 +277,9 @@ NORETURN void task_exit(int code) {
     struct task *cur = g_current;
     KASSERT(cur != NULL && cur->pid != 0);
 
+    if (cur->pid > 2) {
+        tty_set_mode(TTY_MODE_CANON);
+    }
     if (g_close_fds_hook) {
         g_close_fds_hook(cur);
     }

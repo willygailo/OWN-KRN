@@ -42,6 +42,9 @@ int     u_mkdir(const char *path, uint32_t mode);
 int     u_unlink(const char *path);
 int     u_msleep(uint64_t ms);
 int     u_clock_gettime(int clk_id, struct timespec *ts);
+int     u_ioctl(int fd, uint64_t req, uint64_t arg);
+uint32_t u_tty_get_mode(void);
+int     u_tty_set_mode(uint32_t mode);
 void    u_poweroff(void);
 void    u_reboot(void);
 

@@ -104,10 +104,15 @@ int main(int argc, char **argv) {
     printf("[USER] kill(SIGTERM) -> pid=%d exit_code=%d (expect 143)\n", waited, sig_exit);
     check(waited == sleeper && sig_exit == 128 + UAPI_SIGTERM, "child killed with 128+SIGTERM");
 
-    /* 7. clock_gettime + uname */
+    /* 7. clock_gettime + uname + SYS_ioctl TTY mode round-trip */
     struct timespec rt, mono;
     check(u_clock_gettime(CLOCK_REALTIME, &rt) == 0 && rt.tv_sec > 1577836800LL, "CLOCK_REALTIME");
     check(u_clock_gettime(CLOCK_MONOTONIC, &mono) == 0, "CLOCK_MONOTONIC");
+
+    uint32_t orig_mode = u_tty_get_mode();
+    check(u_tty_set_mode(TTY_MODE_RAW | TTY_MODE_NONBLOCK) == 0, "ioctl TIOCSETM raw+nonblock");
+    check(u_tty_get_mode() == (TTY_MODE_RAW | TTY_MODE_NONBLOCK), "ioctl TIOCGETM matches");
+    check(u_tty_set_mode(orig_mode) == 0, "ioctl TIOCSETM restore");
 
     struct utsname u;
     check(u_uname(&u) == 0, "uname syscall");

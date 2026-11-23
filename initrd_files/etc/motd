@@ -1,3 +1,3 @@
 Welcome to OwnKrn 0.2.0-x86_64!
-Custom freestanding Linux-inspired OS kernel built from scratch in C11 + x86_64 ASM.
-Type 'help' for commands, pipelines ('|'), redirection ('<', '>', '>>'), and /bin apps.
+Interactive Apps: 'fetch' (neofetch), 'top' (monitor), 'edit <file>' (nano), 'snake' (game).
+Shell Shortcuts : Up/Down (history), Left/Right/Home/End (edit), Tab (auto-complete), 'help'.

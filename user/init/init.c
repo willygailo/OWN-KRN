@@ -12,7 +12,17 @@ static void print_file(const char *path) {
 }
 
 int main(void) {
-    printf("\n");
+    /* Run /bin/fetch on boot so the user immediately sees the live OS dashboard */
+    pid_t fpid = u_fork();
+    if (fpid == 0) {
+        char *fargv[] = { "/bin/fetch", NULL };
+        u_execve("/bin/fetch", fargv);
+        u_exit(0);
+    } else if (fpid > 0) {
+        int fst = 0;
+        u_waitpid(fpid, &fst);
+    }
+
     print_file("/etc/motd");
     printf("\n");
 

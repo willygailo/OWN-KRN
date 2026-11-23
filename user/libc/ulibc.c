@@ -129,6 +129,20 @@ int u_clock_gettime(int clk_id, struct timespec *ts) {
                           (uint64_t)(uintptr_t)ts, 0, 0, 0, 0);
 }
 
+int u_ioctl(int fd, uint64_t req, uint64_t arg) {
+    return (int)u_syscall(SYS_ioctl, (uint64_t)fd, req, arg, 0, 0, 0);
+}
+
+uint32_t u_tty_get_mode(void) {
+    uint32_t m = 0;
+    u_ioctl(0, OWNKRN_TIOCGETM, (uint64_t)(uintptr_t)&m);
+    return m;
+}
+
+int u_tty_set_mode(uint32_t mode) {
+    return u_ioctl(0, OWNKRN_TIOCSETM, (uint64_t)mode);
+}
+
 void u_poweroff(void) {
     u_syscall(SYS_reboot, OWNKRN_CMD_POWEROFF, 0, 0, 0, 0, 0);
 }

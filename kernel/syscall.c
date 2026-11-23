@@ -3,6 +3,7 @@
 #include <arch/io.h>
 #include <arch/pit.h>
 #include <drivers/rtc.h>
+#include <drivers/tty.h>
 #include <fs/vfs.h>
 #include <kernel/elf.h>
 #include <kernel/errno.h>
@@ -472,6 +473,23 @@ static int64_t sys_clock_gettime(int clk_id, uint64_t utsp) {
     return copy_to_user(utsp, &ts, sizeof(ts));
 }
 
+static int64_t sys_ioctl(int fd, uint64_t req, uint64_t arg) {
+    (void)fd;
+    if (req == OWNKRN_TIOCGETM) {
+        uint32_t m = tty_get_mode();
+        if (arg != 0) {
+            int rc = copy_to_user(arg, &m, sizeof(m));
+            if (rc < 0) return rc;
+        }
+        return (int64_t)m;
+    }
+    if (req == OWNKRN_TIOCSETM) {
+        tty_set_mode((uint32_t)arg);
+        return 0;
+    }
+    return -EINVAL;
+}
+
 int64_t syscall_dispatch(struct interrupt_frame *f) {
     uint64_t nr = f->rax;
     uint64_t a1 = f->rdi;
@@ -488,6 +506,7 @@ int64_t syscall_dispatch(struct interrupt_frame *f) {
         case SYS_fstat:         ret = sys_fstat((int)a1, a2); break;
         case SYS_lseek:         ret = vfs_lseek(sched_current(), (int)a1, (off_t)a2, (int)a3); break;
         case SYS_brk:           ret = sys_brk(a1); break;
+        case SYS_ioctl:         ret = sys_ioctl((int)a1, a2, a3); break;
         case SYS_pipe:          ret = sys_pipe(a1); break;
         case SYS_sched_yield:   sched_yield(); ret = 0; break;
         case SYS_dup:           ret = vfs_dup(sched_current(), (int)a1); break;

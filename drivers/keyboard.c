@@ -30,6 +30,7 @@ static volatile uint32_t g_tail = 0;
 static bool              g_shift = false;
 static bool              g_ctrl = false;
 static bool              g_caps = false;
+static bool              g_ext = false;
 static input_sink_t      g_sink = NULL;
 
 static void push_char(char c) {
@@ -44,9 +45,41 @@ static void push_char(char c) {
     }
 }
 
+static void push_str(const char *s) {
+    while (*s) {
+        push_char(*s++);
+    }
+}
+
 static void keyboard_irq(struct interrupt_frame *frame) {
     (void)frame;
     uint8_t sc = inb(KBD_DATA_PORT);
+
+    if (sc == 0xE0) {
+        g_ext = true;
+        return;
+    }
+
+    if (g_ext) {
+        g_ext = false;
+        if (sc & 0x80) {
+            return;
+        }
+        switch (sc) {
+            case 0x48: push_str("\x1b[A");  return; /* Up */
+            case 0x50: push_str("\x1b[B");  return; /* Down */
+            case 0x4D: push_str("\x1b[C");  return; /* Right */
+            case 0x4B: push_str("\x1b[D");  return; /* Left */
+            case 0x47: push_str("\x1b[H");  return; /* Home */
+            case 0x4F: push_str("\x1b[F");  return; /* End */
+            case 0x53: push_str("\x1b[3~"); return; /* Delete */
+            case 0x49: push_str("\x1b[5~"); return; /* Page Up */
+            case 0x51: push_str("\x1b[6~"); return; /* Page Down */
+            case 0x1C: push_char('\n');     return; /* Keypad Enter */
+            case 0x35: push_char('/');      return; /* Keypad / */
+            default:   return;
+        }
+    }
 
     if (sc == 0x2A || sc == 0x36) { g_shift = true; return; }
     if (sc == 0xAA || sc == 0xB6) { g_shift = false; return; }

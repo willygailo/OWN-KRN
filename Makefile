@@ -118,6 +118,10 @@ ULIBC_OBJS := \
 USER_PROGS := \
 	$(USER_BIN)/init \
 	$(USER_BIN)/sh \
+	$(USER_BIN)/fetch \
+	$(USER_BIN)/top \
+	$(USER_BIN)/edit \
+	$(USER_BIN)/snake \
 	$(USER_BIN)/hello \
 	$(USER_BIN)/grep \
 	$(USER_BIN)/wc \

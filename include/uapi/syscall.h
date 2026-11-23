@@ -12,6 +12,7 @@
 #define SYS_fstat         5
 #define SYS_lseek         8
 #define SYS_brk           12
+#define SYS_ioctl         16
 #define SYS_pipe          22
 #define SYS_sched_yield   24
 #define SYS_dup           32
@@ -57,6 +58,14 @@
 /* Reboot commands */
 #define OWNKRN_CMD_POWEROFF 0x4321FEDCULL
 #define OWNKRN_CMD_REBOOT   0x01234567ULL
+
+/* TTY ioctl commands & mode flags */
+#define OWNKRN_TIOCGETM     0x5401U
+#define OWNKRN_TIOCSETM     0x5402U
+
+#define TTY_MODE_CANON      0x00U
+#define TTY_MODE_RAW        0x01U
+#define TTY_MODE_NONBLOCK   0x02U
 
 struct utsname {
     char sysname[65];

@@ -65,16 +65,57 @@ static void apply_sgr(void) {
                 vga_attr = 0x07;
             } else if (val == 1) {
                 vga_attr |= 0x08; /* Bright foreground */
+            } else if (val == 7) {
+                /* Reverse video: swap fg and bg nibbles */
+                vga_attr = (uint8_t)(((vga_attr & 0x07) << 4) | ((vga_attr >> 4) & 0x07));
+            } else if (val == 27) {
+                vga_attr = 0x07;
             } else if (val >= 30 && val <= 37) {
-                vga_attr = (uint8_t)((vga_attr & 0xF0) | ansi_to_vga[val - 30]);
+                vga_attr = (uint8_t)((vga_attr & 0xF8) | ansi_to_vga[val - 30]);
             } else if (val >= 90 && val <= 97) {
                 vga_attr = (uint8_t)((vga_attr & 0xF0) | ansi_to_vga[val - 90] | 0x08);
             } else if (val >= 40 && val <= 47) {
                 vga_attr = (uint8_t)((vga_attr & 0x0F) | (ansi_to_vga[val - 40] << 4));
+            } else if (val >= 100 && val <= 107) {
+                vga_attr = (uint8_t)((vga_attr & 0x0F) | (ansi_to_vga[val - 100] << 4));
             }
             val = 0;
             has_digit = false;
         }
+    }
+}
+
+static void parse_csi_params(int *p1, int *p2) {
+    esc_buf[esc_len] = '\0';
+    int v1 = 0, v2 = 0;
+    bool in_second = false;
+    for (int i = 0; i < esc_len; i++) {
+        char ch = esc_buf[i];
+        if (ch == '?') continue;
+        if (ch >= '0' && ch <= '9') {
+            if (!in_second) v1 = v1 * 10 + (ch - '0');
+            else v2 = v2 * 10 + (ch - '0');
+        } else if (ch == ';') {
+            in_second = true;
+        }
+    }
+    *p1 = v1;
+    *p2 = v2;
+}
+
+static void console_erase_line(int mode) {
+    int start = 0, end = VGA_COLS;
+    if (mode == 0) {
+        start = cursor_col;
+        end = VGA_COLS;
+    } else if (mode == 1) {
+        start = 0;
+        end = cursor_col + 1;
+    }
+    if (start < 0) start = 0;
+    if (end > VGA_COLS) end = VGA_COLS;
+    for (int c = start; c < end; c++) {
+        vga_buf[cursor_row * VGA_COLS + c] = vga_entry(' ', vga_attr);
     }
 }
 
@@ -114,12 +155,57 @@ void console_putc(char c) {
         }
         esc_state = 0;
     } else if (esc_state == 2) {
-        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
-            if (c == 'J' && esc_len == 1 && esc_buf[0] == '2') {
-                console_clear();
-            } else if (c == 'H' && esc_len == 0) {
-                cursor_row = 0;
-                cursor_col = 0;
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '~') {
+            int p1 = 0, p2 = 0;
+            parse_csi_params(&p1, &p2);
+            if (c == 'J') {
+                if (p1 == 2) {
+                    console_clear();
+                } else if (p1 == 0) {
+                    console_erase_line(0);
+                    for (int r = cursor_row + 1; r < VGA_ROWS; r++) {
+                        for (int col = 0; col < VGA_COLS; col++) {
+                            vga_buf[r * VGA_COLS + col] = vga_entry(' ', vga_attr);
+                        }
+                    }
+                }
+            } else if (c == 'K') {
+                console_erase_line(p1);
+            } else if (c == 'H' || c == 'f') {
+                int r = (p1 > 0) ? (p1 - 1) : 0;
+                int col = (p2 > 0) ? (p2 - 1) : 0;
+                if (r < 0) r = 0;
+                if (r >= VGA_ROWS) r = VGA_ROWS - 1;
+                if (col < 0) col = 0;
+                if (col >= VGA_COLS) col = VGA_COLS - 1;
+                cursor_row = r;
+                cursor_col = col;
+                update_hw_cursor();
+            } else if (c == 'A') {
+                int n = (p1 > 0) ? p1 : 1;
+                cursor_row -= n;
+                if (cursor_row < 0) cursor_row = 0;
+                update_hw_cursor();
+            } else if (c == 'B') {
+                int n = (p1 > 0) ? p1 : 1;
+                cursor_row += n;
+                if (cursor_row >= VGA_ROWS) cursor_row = VGA_ROWS - 1;
+                update_hw_cursor();
+            } else if (c == 'C') {
+                int n = (p1 > 0) ? p1 : 1;
+                cursor_col += n;
+                if (cursor_col >= VGA_COLS) cursor_col = VGA_COLS - 1;
+                update_hw_cursor();
+            } else if (c == 'D') {
+                int n = (p1 > 0) ? p1 : 1;
+                cursor_col -= n;
+                if (cursor_col < 0) cursor_col = 0;
+                update_hw_cursor();
+            } else if (c == 'G') {
+                int col = (p1 > 0) ? (p1 - 1) : 0;
+                if (col < 0) col = 0;
+                if (col >= VGA_COLS) col = VGA_COLS - 1;
+                cursor_col = col;
                 update_hw_cursor();
             } else if (c == 'm') {
                 apply_sgr();

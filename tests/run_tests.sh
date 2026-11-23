@@ -88,11 +88,27 @@ try:
     expect(boot_out, "CMOS RTC", "CMOS RTC wall-clock init")
     expect(boot_out, "W^X enforced", "4-level VMM W^X enforcement")
     expect(boot_out, "SYSCALL/SYSRET MSRs configured", "SYSCALL/SYSRET MSR setup")
+    expect(boot_out, "OWN KRN", "/bin/init launched /bin/fetch dashboard on boot")
     expect(boot_out, "Welcome to OwnKrn 0.2.0", "/bin/init displayed /etc/motd")
 
     out = send_cmd("uname -a")
     expect(out, "OwnKrn ownkrn 0.2.0", "uname -a syscall")
     expect(out, "x86_64", "uname machine architecture")
+
+    out = send_cmd("neofetch")
+    expect(out, "Security:", "neofetch / fetch ASCII logo & telemetry")
+
+    out = send_cmd("top -n 1")
+    expect(out, "OwnKrn Live System Monitor", "top -n 1 batch mode monitor")
+
+    out = send_cmd("tree /dev")
+    expect(out, "tty", "tree command displays /dev hierarchy")
+
+    out = send_cmd("stat /etc/motd")
+    expect(out, "regular file", "stat builtin reports inode metadata")
+
+    out = send_cmd("history")
+    expect(out, "uname -a", "history builtin records previous shell commands")
 
     out = send_cmd("date")
     expect(out, "UTC (epoch=", "CMOS RTC date command & /proc/rtc")

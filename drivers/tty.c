@@ -6,6 +6,7 @@
 #include <kernel/errno.h>
 #include <kernel/sched.h>
 #include <kernel/sync.h>
+#include <uapi/syscall.h>
 
 #define TTY_LINE_MAX  512
 #define TTY_READY_MAX 2048
@@ -18,6 +19,7 @@ static size_t     g_ready_head = 0;
 static size_t     g_ready_tail = 0;
 static bool       g_eof_pending = false;
 static int        g_rx_esc = 0; /* 0=normal, 1=ESC, 2=CSI */
+static uint32_t   g_tty_mode = TTY_MODE_CANON;
 static spinlock_t g_tty_lock = SPINLOCK_INIT;
 
 static void tty_echo(char c) {
@@ -33,8 +35,40 @@ static void ready_push_unlocked(char c) {
     }
 }
 
+void tty_set_mode(uint32_t mode) {
+    uint64_t flags = spin_lock_irqsave(&g_tty_lock);
+    if ((mode & TTY_MODE_RAW) && g_line_len > 0) {
+        for (size_t i = 0; i < g_line_len; i++) {
+            ready_push_unlocked(g_line_buf[i]);
+        }
+        g_line_len = 0;
+    }
+    g_rx_esc = 0;
+    g_tty_mode = mode & (TTY_MODE_RAW | TTY_MODE_NONBLOCK);
+    spin_unlock_irqrestore(&g_tty_lock, flags);
+}
+
+uint32_t tty_get_mode(void) {
+    uint64_t flags = spin_lock_irqsave(&g_tty_lock);
+    uint32_t m = g_tty_mode;
+    spin_unlock_irqrestore(&g_tty_lock, flags);
+    return m;
+}
+
 void tty_rx_char(char c) {
     uint64_t flags = spin_lock_irqsave(&g_tty_lock);
+
+    if (g_tty_mode & TTY_MODE_RAW) {
+        if (c == '\r') {
+            c = '\n';
+        }
+        ready_push_unlocked(c);
+        spin_unlock_irqrestore(&g_tty_lock, flags);
+        if (c == 0x03) {
+            sched_signal_foreground(SIGINT);
+        }
+        return;
+    }
 
     /* Ignore ANSI terminal escape sequences (arrow keys, Home/End, etc.) */
     if (g_rx_esc == 1) {
@@ -124,6 +158,7 @@ void tty_init(void) {
     g_ready_tail = 0;
     g_eof_pending = false;
     g_rx_esc = 0;
+    g_tty_mode = TTY_MODE_CANON;
     keyboard_set_sink(tty_rx_char);
 }
 
@@ -141,11 +176,14 @@ ssize_t tty_read(void *buf, size_t len) {
         }
 
         uint64_t flags = spin_lock_irqsave(&g_tty_lock);
+        bool raw = (g_tty_mode & TTY_MODE_RAW) != 0;
+        bool nonblock = (g_tty_mode & TTY_MODE_NONBLOCK) != 0;
+
         while (n < len && g_ready_tail != g_ready_head) {
             char c = g_ready_buf[g_ready_tail];
             g_ready_tail = (g_ready_tail + 1) % TTY_READY_MAX;
             dst[n++] = c;
-            if (c == '\n') {
+            if (!raw && c == '\n') {
                 spin_unlock_irqrestore(&g_tty_lock, flags);
                 return (ssize_t)n;
             }
@@ -158,6 +196,10 @@ ssize_t tty_read(void *buf, size_t len) {
             g_eof_pending = false;
             spin_unlock_irqrestore(&g_tty_lock, flags);
             return 0; /* EOF */
+        }
+        if (raw && nonblock) {
+            spin_unlock_irqrestore(&g_tty_lock, flags);
+            return 0;
         }
         spin_unlock_irqrestore(&g_tty_lock, flags);
 
