@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define KBD_DATA_PORT 0x60
-#define KBD_BUF_SIZE  256
+#define KBD_BUF_SIZE  4096
 
 static const char scancode_normal[128] = {
     0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
@@ -115,9 +115,7 @@ static void keyboard_irq(struct interrupt_frame *frame) {
     }
 }
 
-static void serial_rx_irq(struct interrupt_frame *frame) {
-    (void)frame;
-    (void)inb(COM1_PORT + 2); /* Acknowledge IIR */
+void keyboard_poll_serial(void) {
     while (serial_has_data()) {
         int ch = serial_getc_nonblock();
         if (ch < 0) {
@@ -128,6 +126,12 @@ static void serial_rx_irq(struct interrupt_frame *frame) {
         }
         push_char((char)ch);
     }
+}
+
+static void serial_rx_irq(struct interrupt_frame *frame) {
+    (void)frame;
+    (void)inb(COM1_PORT + 2); /* Acknowledge IIR */
+    keyboard_poll_serial();
 }
 
 void keyboard_init(void) {

@@ -10,12 +10,13 @@
 #include <mm/kmalloc.h>
 
 enum dev_kind {
-    DEV_NULL    = 1,
-    DEV_ZERO    = 2,
-    DEV_TTY     = 3,
-    DEV_SER     = 4,
-    DEV_URANDOM = 5,
-    DEV_SPEAKER = 6,
+    DEV_NULL      = 1,
+    DEV_ZERO      = 2,
+    DEV_TTY       = 3,
+    DEV_SER       = 4,
+    DEV_URANDOM   = 5,
+    DEV_SPEAKER   = 6,
+    DEV_CLIPBOARD = 7,
 };
 
 struct dev_entry {
@@ -23,7 +24,10 @@ struct dev_entry {
     struct vfs_node *node;
 };
 
-static struct dev_entry g_devs[6];
+#define CLIPBOARD_MAX 16384
+static char             g_clip_buf[CLIPBOARD_MAX];
+static size_t           g_clip_len = 0;
+static struct dev_entry g_devs[7];
 static struct vfs_node *g_dev_root = NULL;
 static uint64_t         g_prng_state = 0x853C49E6748FEA9BULL;
 
@@ -64,6 +68,27 @@ static ssize_t dev_read(struct vfs_node *node, void *buf, size_t len, size_t off
             }
             return (ssize_t)len;
         }
+        case DEV_CLIPBOARD: {
+            if (offset == 0) {
+                /* Pull latest Host OS clipboard over COM2 if bridge is active */
+                static char host_tmp[CLIPBOARD_MAX];
+                size_t host_n = serial_clipboard_sync_from_host(host_tmp, sizeof(host_tmp) - 1);
+                if (host_n > 0) {
+                    memcpy(g_clip_buf, host_tmp, host_n);
+                    g_clip_buf[host_n] = '\0';
+                    g_clip_len = host_n;
+                }
+            }
+            if (offset >= g_clip_len) {
+                return 0;
+            }
+            size_t avail = g_clip_len - offset;
+            if (avail > len) {
+                avail = len;
+            }
+            memcpy(buf, g_clip_buf + offset, avail);
+            return (ssize_t)avail;
+        }
         default:
             return -ENODEV;
     }
@@ -103,6 +128,23 @@ static ssize_t dev_write(struct vfs_node *node, const void *buf, size_t len, siz
             if (freq == 0) freq = 880;
             if (ms == 0) ms = 60;
             speaker_beep(freq, ms);
+            return (ssize_t)len;
+        }
+        case DEV_CLIPBOARD: {
+            if (offset == 0) {
+                g_clip_len = 0;
+            }
+            if (offset < CLIPBOARD_MAX - 1) {
+                size_t space = (CLIPBOARD_MAX - 1) - offset;
+                size_t to_copy = (len < space) ? len : space;
+                memcpy(g_clip_buf + offset, buf, to_copy);
+                if (offset + to_copy > g_clip_len) {
+                    g_clip_len = offset + to_copy;
+                }
+                g_clip_buf[g_clip_len] = '\0';
+                node->size = g_clip_len;
+                serial_clipboard_send_to_host(g_clip_buf, g_clip_len);
+            }
             return (ssize_t)len;
         }
         default:
@@ -175,12 +217,13 @@ struct vfs_node *devfs_create_root(void) {
     g_dev_root->ops      = &dev_dir_ops;
     g_dev_root->parent   = g_dev_root;
 
-    g_devs[0] = (struct dev_entry){ "null",    make_dev(1001, DEV_NULL,    g_dev_root) };
-    g_devs[1] = (struct dev_entry){ "zero",    make_dev(1002, DEV_ZERO,    g_dev_root) };
-    g_devs[2] = (struct dev_entry){ "tty",     make_dev(1003, DEV_TTY,     g_dev_root) };
-    g_devs[3] = (struct dev_entry){ "serial",  make_dev(1004, DEV_SER,     g_dev_root) };
-    g_devs[4] = (struct dev_entry){ "urandom", make_dev(1005, DEV_URANDOM, g_dev_root) };
-    g_devs[5] = (struct dev_entry){ "speaker", make_dev(1006, DEV_SPEAKER, g_dev_root) };
+    g_devs[0] = (struct dev_entry){ "null",      make_dev(1001, DEV_NULL,      g_dev_root) };
+    g_devs[1] = (struct dev_entry){ "zero",      make_dev(1002, DEV_ZERO,      g_dev_root) };
+    g_devs[2] = (struct dev_entry){ "tty",       make_dev(1003, DEV_TTY,       g_dev_root) };
+    g_devs[3] = (struct dev_entry){ "serial",    make_dev(1004, DEV_SER,       g_dev_root) };
+    g_devs[4] = (struct dev_entry){ "urandom",   make_dev(1005, DEV_URANDOM,   g_dev_root) };
+    g_devs[5] = (struct dev_entry){ "speaker",   make_dev(1006, DEV_SPEAKER,   g_dev_root) };
+    g_devs[6] = (struct dev_entry){ "clipboard", make_dev(1007, DEV_CLIPBOARD, g_dev_root) };
 
     return g_dev_root;
 }

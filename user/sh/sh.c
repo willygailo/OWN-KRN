@@ -1076,6 +1076,24 @@ static bool run_builtin(int argc, char **argv, int in_fd, int out_fd) {
         print_file_to_fd("/proc/cpuinfo", out_fd);
     } else if (strcmp(cmd, "irqs") == 0 || strcmp(cmd, "interrupts") == 0) {
         print_file_to_fd("/proc/interrupts", out_fd);
+    } else if (strcmp(cmd, "paste") == 0 || strcmp(cmd, "pbpaste") == 0) {
+        print_file_to_fd("/dev/clipboard", out_fd);
+    } else if (strcmp(cmd, "copy") == 0 || strcmp(cmd, "pbcopy") == 0 || strcmp(cmd, "clip") == 0) {
+        int cfd = u_open("/dev/clipboard", UAPI_O_WRONLY, 0);
+        if (cfd < 0) {
+            printf("clip: cannot open /dev/clipboard (%d)\n", cfd);
+        } else {
+            if (argc > 1) {
+                for (int i = 1; i < argc; i++) {
+                    if (i > 1) u_write(cfd, " ", 1);
+                    u_write(cfd, argv[i], strlen(argv[i]));
+                }
+                u_write(cfd, "\n", 1);
+            } else {
+                copy_fd(in_fd, cfd);
+            }
+            u_close(cfd);
+        }
     } else if (strcmp(cmd, "kill") == 0) {
         if (argc < 2) {
             printf("usage: kill <pid> [sig]\n");
@@ -1209,7 +1227,7 @@ static bool is_known_builtin(const char *cmd) {
         "calc", "cal", "beep", "df", "mounts", "sync",
         "dmesg", "lspci", "lsblk", "kconfig", "id", "su", "chmod",
         "env", "printenv", "export", "unset", "find", "sort", "uniq",
-        "which", "jobs", "fg",
+        "which", "jobs", "fg", "paste", "pbpaste", "copy", "pbcopy", "clip",
         "ls", "ll", "tree", "stat", "history",
         "whoami", "hostname", "ps", "free", "mem", "uname",
         "uptime", "cpuinfo", "irqs", "interrupts",
@@ -1776,6 +1794,32 @@ static ssize_t sh_readline(const char *cwd, char *buf, size_t cap) {
             continue;
         }
 
+        if (c == 0x16) { /* Ctrl-V: Paste from Host / /dev/clipboard into command line */
+            int cfd = u_open("/dev/clipboard", UAPI_O_RDONLY, 0);
+            if (cfd >= 0) {
+                char cbuf[256];
+                ssize_t cn = u_read(cfd, cbuf, sizeof(cbuf) - 1);
+                u_close(cfd);
+                if (cn > 0) {
+                    for (ssize_t k = 0; k < cn && len + 1 < cap; k++) {
+                        char ch = cbuf[k];
+                        if (ch == '\r' || ch == '\n') break;
+                        if (ch == '\t') ch = ' ';
+                        if ((unsigned char)ch >= 0x20) {
+                            for (size_t i = len + 1; i > pos; i--) {
+                                buf[i] = buf[i - 1];
+                            }
+                            buf[pos++] = ch;
+                            len++;
+                            buf[len] = '\0';
+                        }
+                    }
+                    redraw_input(cwd, buf, len, pos);
+                }
+            }
+            continue;
+        }
+
         if (c == 0x17) { /* Ctrl-W: delete previous word */
             if (pos > 0) {
                 size_t old_pos = pos;
@@ -1867,21 +1911,31 @@ static ssize_t sh_readline(const char *cwd, char *buf, size_t cap) {
                     pos = len;
                     redraw_input(cwd, buf, len, pos);
                 }
-            } else if (s2 >= '1' && s2 <= '8') {
-                char tilde = 0;
-                u_read(0, &tilde, 1);
-                if (s2 == '3' && tilde == '~') { /* Delete */
-                    if (pos < len) {
-                        for (size_t i = pos; i < len; i++) buf[i] = buf[i + 1];
-                        len--;
+            } else if (s2 >= '0' && s2 <= '9') {
+                int param = s2 - '0';
+                char ch_next = 0;
+                while (u_read(0, &ch_next, 1) > 0) {
+                    if (ch_next >= '0' && ch_next <= '9') {
+                        param = param * 10 + (ch_next - '0');
+                    } else {
+                        break;
+                    }
+                }
+                if (ch_next == '~') {
+                    if (param == 3) { /* Delete */
+                        if (pos < len) {
+                            for (size_t i = pos; i < len; i++) buf[i] = buf[i + 1];
+                            len--;
+                            redraw_input(cwd, buf, len, pos);
+                        }
+                    } else if (param == 1 || param == 7) { /* Home */
+                        pos = 0;
+                        redraw_input(cwd, buf, len, pos);
+                    } else if (param == 4 || param == 8) { /* End */
+                        pos = len;
                         redraw_input(cwd, buf, len, pos);
                     }
-                } else if ((s2 == '1' || s2 == '7') && tilde == '~') { /* Home */
-                    pos = 0;
-                    redraw_input(cwd, buf, len, pos);
-                } else if ((s2 == '4' || s2 == '8') && tilde == '~') { /* End */
-                    pos = len;
-                    redraw_input(cwd, buf, len, pos);
+                    /* Note: param 200 / 201 (Bracketed Paste) are cleanly ignored */
                 }
             }
             continue;

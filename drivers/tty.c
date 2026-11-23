@@ -8,8 +8,8 @@
 #include <kernel/sync.h>
 #include <uapi/syscall.h>
 
-#define TTY_LINE_MAX  512
-#define TTY_READY_MAX 2048
+#define TTY_LINE_MAX  1024
+#define TTY_READY_MAX 16384
 
 static char       g_line_buf[TTY_LINE_MAX];
 static size_t     g_line_len = 0;
@@ -211,11 +211,12 @@ ssize_t tty_read(void *buf, size_t len) {
 
 ssize_t tty_write(const void *buf, size_t len) {
     const char *src = (const char *)buf;
-    uint64_t flags = irq_save();
     for (size_t i = 0; i < len; i++) {
+        keyboard_poll_serial();
         serial_putc(src[i]);
+        uint64_t flags = irq_save();
         console_putc(src[i]);
+        irq_restore(flags);
     }
-    irq_restore(flags);
     return (ssize_t)len;
 }

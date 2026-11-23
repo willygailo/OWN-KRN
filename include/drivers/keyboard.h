@@ -8,5 +8,6 @@ typedef void (*input_sink_t)(char c);
 void keyboard_init(void);
 void keyboard_set_sink(input_sink_t sink);
 int  keyboard_getc_nonblock(void);
+void keyboard_poll_serial(void);
 
 #endif /* OWNKRN_DRIVERS_KEYBOARD_H */

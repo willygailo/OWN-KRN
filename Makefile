@@ -301,10 +301,10 @@ iso: $(KERNEL) $(INITRD)
 	@echo "Built $(ISO)"
 
 run: $(KERNEL) $(INITRD) $(DISK_IMG)
-	$(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -display none -chardev stdio,id=ser0,mux=on,signal=off -mon chardev=ser0 -serial chardev:ser0
+	$(PYTHON) scripts/clipboard_bridge.py -- $(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -display none -chardev stdio,id=ser0,mux=on,signal=off -mon chardev=ser0 -serial chardev:ser0
 
 run-gui: $(KERNEL) $(INITRD) $(DISK_IMG)
-	$(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -usb -device usb-tablet $(QEMU_GUI_DISPLAY) -chardev stdio,id=ser0,mux=on,signal=off -mon chardev=ser0 -serial chardev:ser0
+	$(PYTHON) scripts/clipboard_bridge.py -- $(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -usb -device usb-tablet $(QEMU_GUI_DISPLAY) -chardev stdio,id=ser0,mux=on,signal=off -mon chardev=ser0 -serial chardev:ser0
 
 debug: $(KERNEL) $(INITRD) $(DISK_IMG)
 	@echo "Starting QEMU paused on gdbstub tcp::1234"
