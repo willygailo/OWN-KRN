@@ -108,6 +108,11 @@ int u_chdir(const char *path) {
     return (int)u_syscall(SYS_chdir, (uint64_t)(uintptr_t)path, 0, 0, 0, 0, 0);
 }
 
+int u_rename(const char *oldpath, const char *newpath) {
+    return (int)u_syscall(SYS_rename, (uint64_t)(uintptr_t)oldpath,
+                          (uint64_t)(uintptr_t)newpath, 0, 0, 0, 0);
+}
+
 int u_mkdir(const char *path, uint32_t mode) {
     return (int)u_syscall(SYS_mkdir, (uint64_t)(uintptr_t)path, mode, 0, 0, 0, 0);
 }

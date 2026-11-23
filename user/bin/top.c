@@ -68,18 +68,18 @@ static void render_frame(bool batch_mode, const char *status_msg) {
     uint64_t kh_mapped = parse_num_after(mem_buf, "KHeapMapped:");
     uint64_t kh_used   = parse_num_after(mem_buf, "KHeapUsed:");
 
-    char ram_gauge[25];
-    char kh_gauge[25];
-    build_gauge(ram_gauge, 24, mem_used, mem_total);
-    build_gauge(kh_gauge, 24, kh_used, kh_mapped * 1024ULL);
+    char ram_gauge[41];
+    char kh_gauge[41];
+    build_gauge(ram_gauge, 40, mem_used, mem_total);
+    build_gauge(kh_gauge, 40, kh_used, kh_mapped * 1024ULL);
 
     if (!batch_mode) {
         printf("\x1b[H");
     }
 
-    printf("\x1b[7m OwnKrn Live System Monitor (top) | %s | Up: %-18s \x1b[0m\x1b[K\n",
+    printf("\x1b[7m OwnKrn Live System Monitor (top) | %s | Up: %-36s \x1b[0m\x1b[K\n",
            rtc_buf[0] ? rtc_buf : "RTC UTC", up_buf);
-    printf(" \x1b[1;36mMem  \x1b[0m[\x1b[1;32m%s\x1b[0m] %llu/%llu kB (Free: %llu kB)\x1b[K\n",
+    printf(" \x1b[1;36mMem  \x1b[0m[\x1b[1;32m%s\x1b[0m] %llu / %llu kB (Free: %llu kB)\x1b[K\n",
            ram_gauge,
            (unsigned long long)mem_used,
            (unsigned long long)mem_total,
@@ -89,14 +89,14 @@ static void render_frame(bool batch_mode, const char *status_msg) {
            (unsigned long long)kh_used,
            (unsigned long long)kh_mapped);
     printf("\x1b[K\n");
-    printf("\x1b[7m %-5s %-5s %-7s %-5s %-8s %-40s \x1b[0m\x1b[K\n",
+    printf("\x1b[7m %-5s %-5s %-7s %-5s %-8s %-60s \x1b[0m\x1b[K\n",
            "PID", "PPID", "STATE", "RING", "TICKS", "NAME");
 
     /* Print each line of /proc/tasks after the header */
     const char *p = strchr(task_buf, '\n');
     int rows = 0;
     if (p) p++;
-    while (p && *p && rows < 15) {
+    while (p && *p && rows < 24) {
         const char *nl = strchr(p, '\n');
         char line[128];
         size_t l = nl ? (size_t)(nl - p) : strlen(p);
@@ -110,17 +110,17 @@ static void render_frame(bool batch_mode, const char *status_msg) {
         } else if (strstr(line, " U3 ")) {
             color = "\x1b[1;36m";
         }
-        printf(" %s%-74s\x1b[0m\x1b[K\n", color, line);
+        printf(" %s%-94s\x1b[0m\x1b[K\n", color, line);
         rows++;
         p = nl ? (nl + 1) : NULL;
     }
 
     if (!batch_mode) {
-        while (rows < 15) {
+        while (rows < 24) {
             printf("\x1b[K\n");
             rows++;
         }
-        printf("\x1b[7m [q] Quit   [k] Kill PID (SIGTERM)   [r/Space] Refresh   %-20s \x1b[0m\x1b[K",
+        printf("\x1b[7m [q] Quit   [k] Kill PID (SIGTERM)   [r/Space] Refresh   %-40s \x1b[0m\x1b[K",
                status_msg ? status_msg : "");
     }
 }

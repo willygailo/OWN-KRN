@@ -28,6 +28,7 @@
 #define SYS_getdents      78
 #define SYS_getcwd        79
 #define SYS_chdir         80
+#define SYS_rename        82
 #define SYS_mkdir         83
 #define SYS_unlink        87
 #define SYS_getppid       110

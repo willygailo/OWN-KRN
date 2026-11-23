@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/Language-C11%20%2B%20NASM-10b981?style=for-the-badge&logo=c&logoColor=white" alt="C11 + NASM" />
   <img src="https://img.shields.io/badge/Boot-Multiboot2%20%7C%20PVH-8b5cf6?style=for-the-badge&logo=linux&logoColor=white" alt="Multiboot2 / PVH" />
   <img src="https://img.shields.io/badge/Security-W%5EX%20%2B%20SMEP%20%2B%20Ring%203-f59e0b?style=for-the-badge&logo=shield&logoColor=white" alt="W^X + SMEP + Ring 3" />
-  <img src="https://img.shields.io/badge/QEMU%20Tests-38%2F38%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
+  <img src="https://img.shields.io/badge/QEMU%20Tests-44%2F44%20Passing-22c55e?style=for-the-badge&logo=qemu&logoColor=white" alt="Tests Passing" />
 </p>
 
 <p>
@@ -154,25 +154,25 @@ flowchart LR
 | :--- | :--- |
 | 🖥️ **Interactive TUI Apps** | `fetch` / `neofetch` (ASCII OS logo & live telemetry), `top` / `htop` (real-time task & memory monitor with `[k]` kill), `edit <file>` / `nano` (full-screen text editor), `snake` (playable terminal arcade game) |
 | ⌨️ **Shell Line Editor** | **Up/Down** command history (`history`), **Left/Right/Home/End/Del** cursor line editing, **Tab** auto-completion (commands + VFS paths), `Ctrl+L` clear, `Ctrl+U`/`Ctrl+W` line/word kill |
-| 📁 **Filesystem** | `ls [-l] [dir]` / `ll` (colorized + sizes), `tree [dir]`, `stat <path>`, `cd [dir]`, `pwd`, `cat [file...]`, `echo [args...]`, `mkdir <dir>`, `touch <file>`, `rm <path>` |
+| 📁 **Filesystem & Scripts** | `ls [-l] [dir]` / `ll`, `tree [dir]`, `stat <path>`, `cp <src> <dst>`, `mv <src> <dst>`, `head [-n N]`, `tail [-n N]`, `sh <script.sh>` / `source`, `cd`, `pwd`, `cat`, `mkdir`, `touch`, `rm` |
 | 🔀 **Pipelines & I/O** | Full multi-stage pipelines (`ps \| grep U3`, `cat /etc/motd \| wc`) + `<`, `>`, `>>` for both built-ins & ELF64 binaries |
-| 📊 **System Info** | `uname [-a]`, `ps` (`/proc/tasks`), `free` / `mem` (`/proc/meminfo`), `uptime` (`/proc/uptime`), `date` (`/proc/rtc`), `whoami`, `hostname [name]` |
+| 📊 **System & Hardware Info** | `uname [-a]`, `cpuinfo` (`/proc/cpuinfo`), `irqs` (`/proc/interrupts`), `ps` (`/proc/tasks`), `free` (`/proc/meminfo`), `uptime` (`/proc/uptime`), `date` (`/proc/rtc`) |
 | ⚡ **Ring 3 ELF64 Apps** | `fetch`, `top`, `edit`, `snake`, `hello [name]`, `grep <pat> [file]`, `wc [file]`, `hexdump [file]`, `date`, `sleep <ms>`, `selftest`, `faulttest` |
-| 🔌 **Control** | `help`, `kill <pid> [sig]`, `clear` (ANSI + VGA), `reboot`, `halt` / `poweroff`, `exit` |
+| 🔌 **Control** | `help`, `kill <pid> [sig]`, `clear` (ANSI + VBE LFB), `reboot`, `halt` / `poweroff`, `exit` |
 
 <details>
-<summary>📡 <b>View Linux-Compatible x86_64 Syscall Table (29 Syscalls)</b></summary>
+<summary>📡 <b>View Linux-Compatible x86_64 Syscall Table (30 Syscalls)</b></summary>
 
 | `#` | Syscall | `#` | Syscall | `#` | Syscall | `#` | Syscall |
 | :---: | :--- | :---: | :--- | :---: | :--- | :---: | :--- |
 | `0` | `read` | `12` | `brk` | `57` | `fork` | `79` | `getcwd` |
 | `1` | `write` | `16` | `ioctl` | `59` | `execve` | `80` | `chdir` |
-| `2` | `open` | `22` | `pipe` | `60` | `exit` | `83` | `mkdir` |
-| `3` | `close` | `24` | `sched_yield` | `61` | `wait4` | `87` | `unlink` |
-| `4` | `stat` | `32` | `dup` | `62` | `kill` | `110` | `getppid` |
-| `5` | `fstat` | `33` | `dup2` | `63` | `uname` | `169` | `reboot` |
-| `8` | `lseek` | `35` | `nanosleep` | `78` | `getdents` | `228` | `clock_gettime` |
-| — | — | `39` | `getpid` | — | — | — | — |
+| `2` | `open` | `22` | `pipe` | `60` | `exit` | `82` | `rename` |
+| `3` | `close` | `24` | `sched_yield` | `61` | `wait4` | `83` | `mkdir` |
+| `4` | `stat` | `32` | `dup` | `62` | `kill` | `87` | `unlink` |
+| `5` | `fstat` | `33` | `dup2` | `63` | `uname` | `110` | `getppid` |
+| `8` | `lseek` | `35` | `nanosleep` | `78` | `getdents` | `169` | `reboot` |
+| — | — | `39` | `getpid` | — | — | `228` | `clock_gettime` |
 
 </details>
 

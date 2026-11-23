@@ -58,6 +58,7 @@ static void cmd_help(int out_fd) {
         "    fetch / neofetch    Display ASCII OS logo & live system telemetry\n"
         "    top / htop [-n 1]   Interactive real-time process & memory monitor\n"
         "    uname [-a]          Print kernel & machine info\n"
+        "    cpuinfo / irqs      Inspect /proc/cpuinfo & /proc/interrupts\n"
         "    ps / free / uptime  Inspect /proc/tasks, meminfo, uptime\n"
         "    date                Display CMOS RTC date & UTC epoch\n"
         "    whoami / hostname   Show or set active user / hostname\n"
@@ -67,9 +68,11 @@ static void cmd_help(int out_fd) {
         "    ls [-l] [dir]       List directory entries (colorized + sizes)\n"
         "    tree [dir]          Render visual directory hierarchy\n"
         "    stat <path>         Inspect inode, type, mode, and byte size\n"
-        "    cat [file...]       Display file(s) or stdin\n"
+        "    cat / head / tail   Display full, first N, or last N lines\n"
+        "    cp / mv <src> <dst> Copy or move/rename files & directories\n"
         "    edit / nano <file>  Full-screen interactive TUI text editor\n"
         "    mkdir / touch / rm  Create or remove files & directories\n"
+        "    sh <script.sh>      Execute a shell script file\n"
         "  \x1b[1;32mUtilities & Games:\x1b[0m\n"
         "    snake               Playable terminal Snake game in Ring 3\n"
         "    grep / wc / hexdump Stream filter, line/word/byte count, hex viewer\n"
@@ -248,6 +251,129 @@ static void cmd_history(int out_fd) {
     }
 }
 
+static void cmd_cp(int argc, char **argv) {
+    if (argc < 3) {
+        printf("usage: cp <src> <dst>\n");
+        return;
+    }
+    int sfd = u_open(argv[1], UAPI_O_RDONLY, 0);
+    if (sfd < 0) {
+        printf("cp: cannot open '%s' (err=%d)\n", argv[1], sfd);
+        return;
+    }
+    int dfd = u_open(argv[2], UAPI_O_CREAT | UAPI_O_WRONLY | UAPI_O_TRUNC, 0644);
+    if (dfd < 0) {
+        printf("cp: cannot create '%s' (err=%d)\n", argv[2], dfd);
+        u_close(sfd);
+        return;
+    }
+    char buf[512];
+    ssize_t n;
+    while ((n = u_read(sfd, buf, sizeof(buf))) > 0) {
+        u_write(dfd, buf, (size_t)n);
+    }
+    u_close(sfd);
+    u_close(dfd);
+}
+
+static void cmd_mv(int argc, char **argv) {
+    if (argc < 3) {
+        printf("usage: mv <src> <dst>\n");
+        return;
+    }
+    int rc = u_rename(argv[1], argv[2]);
+    if (rc < 0) {
+        printf("mv: cannot move '%s' to '%s' (err=%d)\n", argv[1], argv[2], rc);
+    }
+}
+
+static void cmd_head_tail(int argc, char **argv, int in_fd, int out_fd, bool is_tail) {
+    int nlines = 10;
+    const char *path = NULL;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
+            nlines = atoi(argv[++i]);
+            if (nlines < 1) nlines = 1;
+        } else {
+            path = argv[i];
+        }
+    }
+
+    int fd = in_fd;
+    if (path) {
+        fd = u_open(path, UAPI_O_RDONLY, 0);
+        if (fd < 0) {
+            printf("%s: cannot open '%s' (err=%d)\n",
+                   is_tail ? "tail" : "head", path, fd);
+            return;
+        }
+    }
+
+    char data[2048];
+    size_t total = 0;
+    ssize_t r;
+    while (total + 1 < sizeof(data) &&
+           (r = u_read(fd, data + total, sizeof(data) - 1 - total)) > 0) {
+        total += (size_t)r;
+    }
+    data[total] = '\0';
+    if (path) u_close(fd);
+
+    if (!is_tail) {
+        int seen = 0;
+        size_t end = 0;
+        while (end < total && seen < nlines) {
+            if (data[end++] == '\n') seen++;
+        }
+        if (end > 0) u_write(out_fd, data, end);
+    } else {
+        int seen = 0;
+        size_t pos = total;
+        if (pos > 0 && data[pos - 1] == '\n') pos--;
+        while (pos > 0) {
+            if (data[pos - 1] == '\n') {
+                seen++;
+                if (seen >= nlines) break;
+            }
+            pos--;
+        }
+        if (total > pos) u_write(out_fd, data + pos, total - pos);
+    }
+}
+
+static void execute_line(char *line);
+
+static int run_script_file(const char *path) {
+    int fd = u_open(path, UAPI_O_RDONLY, 0);
+    if (fd < 0) {
+        printf("sh: cannot open script '%s' (err=%d)\n", path, fd);
+        return 1;
+    }
+    char content[2048];
+    size_t total = 0;
+    ssize_t n;
+    while (total + 1 < sizeof(content) &&
+           (n = u_read(fd, content + total, sizeof(content) - 1 - total)) > 0) {
+        total += (size_t)n;
+    }
+    content[total] = '\0';
+    u_close(fd);
+
+    char *p = content;
+    while (*p) {
+        char *nl = strchr(p, '\n');
+        char line[SH_LINE_MAX];
+        size_t l = nl ? (size_t)(nl - p) : strlen(p);
+        if (l >= sizeof(line)) l = sizeof(line) - 1;
+        memcpy(line, p, l);
+        line[l] = '\0';
+        execute_line(line);
+        if (!nl) break;
+        p = nl + 1;
+    }
+    return 0;
+}
+
 static void cmd_uname(int argc, char **argv, int out_fd) {
     struct utsname u;
     if (u_uname(&u) < 0) {
@@ -267,6 +393,7 @@ static void cmd_uname(int argc, char **argv, int out_fd) {
 static bool is_stateful_builtin(const char *cmd) {
     return strcmp(cmd, "cd") == 0 ||
            strcmp(cmd, "hostname") == 0 ||
+           strcmp(cmd, "source") == 0 ||
            strcmp(cmd, "exit") == 0 ||
            strcmp(cmd, "halt") == 0 ||
            strcmp(cmd, "poweroff") == 0 ||
@@ -326,6 +453,17 @@ static bool run_builtin(int argc, char **argv, int in_fd, int out_fd) {
                 print_file_to_fd(argv[i], out_fd);
             }
         }
+    } else if (strcmp(cmd, "head") == 0) {
+        cmd_head_tail(argc, argv, in_fd, out_fd, false);
+    } else if (strcmp(cmd, "tail") == 0) {
+        cmd_head_tail(argc, argv, in_fd, out_fd, true);
+    } else if (strcmp(cmd, "cp") == 0) {
+        cmd_cp(argc, argv);
+    } else if (strcmp(cmd, "mv") == 0) {
+        cmd_mv(argc, argv);
+    } else if (strcmp(cmd, "source") == 0) {
+        if (argc < 2) printf("usage: source <script.sh>\n");
+        else run_script_file(argv[1]);
     } else if (strcmp(cmd, "echo") == 0) {
         for (int i = 1; i < argc; i++) {
             if (i > 1) write_str_fd(out_fd, " ");
@@ -357,6 +495,10 @@ static bool run_builtin(int argc, char **argv, int in_fd, int out_fd) {
         print_file_to_fd("/proc/meminfo", out_fd);
     } else if (strcmp(cmd, "uptime") == 0) {
         print_file_to_fd("/proc/uptime", out_fd);
+    } else if (strcmp(cmd, "cpuinfo") == 0) {
+        print_file_to_fd("/proc/cpuinfo", out_fd);
+    } else if (strcmp(cmd, "irqs") == 0 || strcmp(cmd, "interrupts") == 0) {
+        print_file_to_fd("/proc/interrupts", out_fd);
     } else if (strcmp(cmd, "kill") == 0) {
         if (argc < 2) {
             printf("usage: kill <pid> [sig]\n");
@@ -482,9 +624,11 @@ static bool resolve_exec_path(const char *raw_cmd, char *out, size_t cap) {
 
 static bool is_known_builtin(const char *cmd) {
     static const char *const builtins[] = {
-        "echo", "cat", "ls", "ll", "tree", "stat", "history",
+        "echo", "cat", "head", "tail", "cp", "mv", "source",
+        "ls", "ll", "tree", "stat", "history",
         "whoami", "hostname", "ps", "free", "mem", "uname",
-        "uptime", "pwd", "cd", "help", "mkdir", "touch", "rm",
+        "uptime", "cpuinfo", "irqs", "interrupts",
+        "pwd", "cd", "help", "mkdir", "touch", "rm",
         "kill", "clear", "halt", "poweroff", "reboot", "exit", NULL
     };
     for (int i = 0; builtins[i]; i++) {
@@ -494,6 +638,23 @@ static bool is_known_builtin(const char *cmd) {
 }
 
 static void execute_line(char *line) {
+    while (*line == ' ' || *line == '\t' || *line == '\r' || *line == '\n') {
+        line++;
+    }
+    if (!*line || *line == '#') {
+        return;
+    }
+
+    /* Strip inline '#' comment outside double quotes */
+    bool q = false;
+    for (char *p = line; *p; p++) {
+        if (*p == '"') q = !q;
+        else if (*p == '#' && !q && (p == line || p[-1] == ' ' || p[-1] == '\t')) {
+            *p = '\0';
+            break;
+        }
+    }
+
     char *stage_strs[SH_MAX_STAGES];
     int nstages = 0;
     bool in_quote = false;
@@ -704,8 +865,10 @@ static void handle_tab_completion(const char *cwd, char *buf, size_t *len_io, si
     if (is_cmd_tok && !has_slash) {
         static const char *const cmds[] = {
             "help", "fetch", "neofetch", "top", "htop", "edit", "nano",
-            "snake", "uname", "pwd", "cd", "ls", "ll", "tree", "stat",
-            "cat", "echo", "mkdir", "touch", "rm", "ps", "free", "uptime",
+            "snake", "uname", "cpuinfo", "irqs", "interrupts",
+            "pwd", "cd", "ls", "ll", "tree", "stat",
+            "cat", "head", "tail", "cp", "mv", "source", "sh",
+            "echo", "mkdir", "touch", "rm", "ps", "free", "uptime",
             "date", "kill", "history", "whoami", "hostname", "clear",
             "halt", "reboot", "exit", NULL
         };
@@ -1023,7 +1186,11 @@ static ssize_t sh_readline(const char *cwd, char *buf, size_t cap) {
     }
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc > 1) {
+        return run_script_file(argv[1]);
+    }
+
     char line[SH_LINE_MAX];
     char cwd[256];
 

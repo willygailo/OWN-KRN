@@ -53,7 +53,14 @@ static void push_str(const char *s) {
 
 static void keyboard_irq(struct interrupt_frame *frame) {
     (void)frame;
+    uint8_t status = inb(0x64);
+    if (!(status & 0x01)) {
+        return;
+    }
     uint8_t sc = inb(KBD_DATA_PORT);
+    if (status & 0x20) {
+        return;
+    }
 
     if (sc == 0xE0) {
         g_ext = true;

@@ -1,15 +1,19 @@
+#include <arch/io.h>
+#include <arch/pit.h>
 #include <drivers/serial.h>
 #include <drivers/tty.h>
 #include <fs/vfs.h>
 #include <kernel/errno.h>
+#include <lib/printf.h>
 #include <lib/string.h>
 #include <mm/kmalloc.h>
 
 enum dev_kind {
-    DEV_NULL = 1,
-    DEV_ZERO = 2,
-    DEV_TTY  = 3,
-    DEV_SER  = 4,
+    DEV_NULL    = 1,
+    DEV_ZERO    = 2,
+    DEV_TTY     = 3,
+    DEV_SER     = 4,
+    DEV_URANDOM = 5,
 };
 
 struct dev_entry {
@@ -17,11 +21,25 @@ struct dev_entry {
     struct vfs_node *node;
 };
 
-static struct dev_entry g_devs[4];
+static struct dev_entry g_devs[5];
 static struct vfs_node *g_dev_root = NULL;
+static uint64_t         g_prng_state = 0x853C49E6748FEA9BULL;
+
+static inline uint64_t read_tsc(void) {
+    uint32_t lo, hi;
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    return ((uint64_t)hi << 32) | lo;
+}
+
+static uint64_t next_urandom64(void) {
+    g_prng_state ^= read_tsc() ^ (pit_ticks() * 0x9E3779B97F4A7C15ULL);
+    uint64_t z = (g_prng_state += 0x9E3779B97F4A7C15ULL);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
 
 static ssize_t dev_read(struct vfs_node *node, void *buf, size_t len, size_t offset) {
-    (void)offset;
     enum dev_kind kind = (enum dev_kind)(uintptr_t)node->priv;
     switch (kind) {
         case DEV_NULL:
@@ -32,6 +50,18 @@ static ssize_t dev_read(struct vfs_node *node, void *buf, size_t len, size_t off
         case DEV_TTY:
         case DEV_SER:
             return tty_read(buf, len);
+        case DEV_URANDOM: {
+            (void)offset;
+            uint8_t *dst = (uint8_t *)buf;
+            size_t i = 0;
+            while (i < len) {
+                uint64_t r = next_urandom64();
+                for (int b = 0; b < 8 && i < len; b++, i++) {
+                    dst[i] = (uint8_t)((r >> (b * 8)) & 0xFFU);
+                }
+            }
+            return (ssize_t)len;
+        }
         default:
             return -ENODEV;
     }
@@ -43,6 +73,7 @@ static ssize_t dev_write(struct vfs_node *node, const void *buf, size_t len, siz
     switch (kind) {
         case DEV_NULL:
         case DEV_ZERO:
+        case DEV_URANDOM:
             return (ssize_t)len;
         case DEV_TTY:
             return tty_write(buf, len);
@@ -123,10 +154,11 @@ struct vfs_node *devfs_create_root(void) {
     g_dev_root->ops      = &dev_dir_ops;
     g_dev_root->parent   = g_dev_root;
 
-    g_devs[0] = (struct dev_entry){ "null",   make_dev(1001, DEV_NULL, g_dev_root) };
-    g_devs[1] = (struct dev_entry){ "zero",   make_dev(1002, DEV_ZERO, g_dev_root) };
-    g_devs[2] = (struct dev_entry){ "tty",    make_dev(1003, DEV_TTY,  g_dev_root) };
-    g_devs[3] = (struct dev_entry){ "serial", make_dev(1004, DEV_SER,  g_dev_root) };
+    g_devs[0] = (struct dev_entry){ "null",    make_dev(1001, DEV_NULL,    g_dev_root) };
+    g_devs[1] = (struct dev_entry){ "zero",    make_dev(1002, DEV_ZERO,    g_dev_root) };
+    g_devs[2] = (struct dev_entry){ "tty",     make_dev(1003, DEV_TTY,     g_dev_root) };
+    g_devs[3] = (struct dev_entry){ "serial",  make_dev(1004, DEV_SER,     g_dev_root) };
+    g_devs[4] = (struct dev_entry){ "urandom", make_dev(1005, DEV_URANDOM, g_dev_root) };
 
     return g_dev_root;
 }

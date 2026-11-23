@@ -1,8 +1,8 @@
 #include <ulibc.h>
 
 #define EDIT_MAX_LINES 128
-#define EDIT_MAX_COLS  70
-#define VIEW_ROWS      20
+#define EDIT_MAX_COLS  112
+#define VIEW_ROWS      28
 
 static char g_lines[EDIT_MAX_LINES][EDIT_MAX_COLS + 1];
 static int  g_num_lines = 1;

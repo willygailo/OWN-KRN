@@ -50,6 +50,7 @@ struct vfs_ops {
     int     (*readdir)(struct vfs_node *dir, size_t index, struct vfs_dirent *out);
     int     (*create)(struct vfs_node *dir, const char *name, enum vfs_type type,
                       uint32_t mode, struct vfs_node **out);
+    int     (*link)(struct vfs_node *dir, const char *name, struct vfs_node *target);
     int     (*unlink)(struct vfs_node *dir, const char *name);
     int     (*truncate)(struct vfs_node *node, size_t new_size);
     void    (*release)(struct vfs_node *node);
@@ -89,6 +90,7 @@ int              vfs_resolve_parent(const char *cwd, const char *path,
 
 int              vfs_mkdir(const char *cwd, const char *path, uint32_t mode);
 int              vfs_unlink(const char *cwd, const char *path);
+int              vfs_rename(const char *cwd, const char *oldpath, const char *newpath);
 int              vfs_stat_path(const char *cwd, const char *path, struct vfs_stat *st);
 int              vfs_stat_node(struct vfs_node *node, struct vfs_stat *st);
 

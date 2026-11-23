@@ -18,4 +18,9 @@ void idt_init(void);
 void irq_register_handler(uint8_t irq, irq_handler_t handler);
 void idt_register_vector(uint8_t vector, irq_handler_t handler);
 
+uint64_t idt_get_irq_count(uint8_t irq);
+uint64_t idt_get_pf_count(void);
+uint64_t idt_get_syscall_count(void);
+void     idt_inc_syscall_count(void);
+
 #endif /* OWNKRN_ARCH_IDT_H */

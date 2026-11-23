@@ -27,8 +27,27 @@ struct idt_ptr {
 
 extern uint64_t isr_stub_table[NUM_STUBS];
 
-static struct idt_entry g_idt[IDT_ENTRIES] ALIGNED(16);
-static irq_handler_t    g_handlers[IDT_ENTRIES];
+static struct idt_entry  g_idt[IDT_ENTRIES] ALIGNED(16);
+static irq_handler_t     g_handlers[IDT_ENTRIES];
+static volatile uint64_t g_irq_counts[16];
+static volatile uint64_t g_pf_count = 0;
+static volatile uint64_t g_syscall_count = 0;
+
+uint64_t idt_get_irq_count(uint8_t irq) {
+    return (irq < 16) ? g_irq_counts[irq] : 0;
+}
+
+uint64_t idt_get_pf_count(void) {
+    return g_pf_count;
+}
+
+uint64_t idt_get_syscall_count(void) {
+    return g_syscall_count;
+}
+
+void idt_inc_syscall_count(void) {
+    g_syscall_count++;
+}
 
 static const char *const k_exception_names[32] = {
     "Divide-by-Zero (#DE)",
@@ -119,6 +138,7 @@ void interrupt_dispatch(struct interrupt_frame *frame) {
             return;
         }
         /* Send EOI before handler if handler may context switch (e.g. IRQ0 timer) */
+        g_irq_counts[irq]++;
         pic_eoi(irq);
         if (g_handlers[vec]) {
             g_handlers[vec](frame);
@@ -134,6 +154,9 @@ void interrupt_dispatch(struct interrupt_frame *frame) {
 
     /* CPU Exception (0..31) */
     if (vec < 32) {
+        if (vec == 14) {
+            g_pf_count++;
+        }
         if ((frame->cs & 3) == 3 && g_user_fault_hook && g_user_fault_hook(frame)) {
             return;
         }

@@ -1,7 +1,7 @@
 #include <ulibc.h>
 
-#define BOARD_W   38
-#define BOARD_H   16
+#define BOARD_W   60
+#define BOARD_H   22
 #define MAX_SNAKE 256
 
 struct pt {

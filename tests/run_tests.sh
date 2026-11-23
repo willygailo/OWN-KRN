@@ -110,6 +110,14 @@ try:
     out = send_cmd("history")
     expect(out, "uname -a", "history builtin records previous shell commands")
 
+    out = send_cmd("cpuinfo")
+    expect(out, "vendor_id", "/proc/cpuinfo hardware CPUID vendor")
+    expect(out, "smep", "/proc/cpuinfo reports CPU feature flags")
+
+    out = send_cmd("irqs")
+    expect(out, "IRQ0 (PIC1)", "/proc/interrupts reports PIT IRQ0 counter")
+    expect(out, "SYSCALL (LSTAR)", "/proc/interrupts reports SYSCALL counter")
+
     out = send_cmd("date")
     expect(out, "UTC (epoch=", "CMOS RTC date command & /proc/rtc")
 
@@ -134,6 +142,18 @@ try:
     out = send_cmd("echo line2 >> /tmp/demo/ext.txt", wait_prompt=b"ownkrn:/tmp/demo# ")
     out = send_cmd("cat /tmp/demo/ext.txt | wc", wait_prompt=b"ownkrn:/tmp/demo# ")
     expect(out, "     2 ", "pipe 'cat | wc' counts 2 lines")
+
+    out = send_cmd("cp /tmp/demo/ext.txt /tmp/demo/copy.txt", wait_prompt=b"ownkrn:/tmp/demo# ")
+    out = send_cmd("mv /tmp/demo/copy.txt /tmp/demo/moved.txt", wait_prompt=b"ownkrn:/tmp/demo# ")
+    out = send_cmd("tail -n 1 /tmp/demo/moved.txt", wait_prompt=b"ownkrn:/tmp/demo# ")
+    expect(out, "line2", "cp + mv (SYS_rename) + tail -n 1")
+    out = send_cmd("rm /tmp/demo/moved.txt", wait_prompt=b"ownkrn:/tmp/demo# ")
+
+    out = send_cmd("echo \"# comment line\" > /tmp/demo/run.sh", wait_prompt=b"ownkrn:/tmp/demo# ")
+    out = send_cmd("echo \"echo script-ok\" >> /tmp/demo/run.sh", wait_prompt=b"ownkrn:/tmp/demo# ")
+    out = send_cmd("sh /tmp/demo/run.sh", wait_prompt=b"ownkrn:/tmp/demo# ")
+    expect(out, "script-ok", "sh <script.sh> executes script and ignores # comments")
+    out = send_cmd("rm /tmp/demo/run.sh", wait_prompt=b"ownkrn:/tmp/demo# ")
 
     out = send_cmd("rm /tmp/demo/ext.txt", wait_prompt=b"ownkrn:/tmp/demo# ")
     out = send_cmd("cd /", wait_prompt=b"ownkrn:/# ")

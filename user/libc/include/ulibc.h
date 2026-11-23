@@ -38,6 +38,7 @@ int     u_uname(struct utsname *u);
 int     u_getdents(int fd, struct uapi_dirent *ents, size_t max_ents);
 int     u_getcwd(char *buf, size_t size);
 int     u_chdir(const char *path);
+int     u_rename(const char *oldpath, const char *newpath);
 int     u_mkdir(const char *path, uint32_t mode);
 int     u_unlink(const char *path);
 int     u_msleep(uint64_t ms);

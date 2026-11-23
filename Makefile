@@ -228,7 +228,7 @@ run: $(KERNEL) $(INITRD)
 	$(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -display none -chardev stdio,id=ser0,mux=on,signal=off -mon chardev=ser0 -serial chardev:ser0
 
 run-gui: $(KERNEL) $(INITRD)
-	$(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -chardev stdio,id=ser0,mux=on,signal=off -mon chardev=ser0 -serial chardev:ser0
+	$(QEMU) $(QEMU_COMMON) -kernel $(KERNEL) -initrd $(INITRD) -display gtk,zoom-to-fit=on,show-cursor=on -chardev stdio,id=ser0,mux=on,signal=off -mon chardev=ser0 -serial chardev:ser0
 
 debug: $(KERNEL) $(INITRD)
 	@echo "Starting QEMU paused on gdbstub tcp::1234"

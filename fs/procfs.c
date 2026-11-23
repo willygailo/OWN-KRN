@@ -1,3 +1,5 @@
+#include <arch/idt.h>
+#include <arch/io.h>
 #include <arch/pit.h>
 #include <drivers/rtc.h>
 #include <fs/vfs.h>
@@ -9,11 +11,13 @@
 #include <mm/pmm.h>
 
 enum proc_kind {
-    PROC_VERSION = 1,
-    PROC_MEMINFO = 2,
-    PROC_UPTIME  = 3,
-    PROC_TASKS   = 4,
-    PROC_RTC     = 5,
+    PROC_VERSION    = 1,
+    PROC_MEMINFO    = 2,
+    PROC_UPTIME     = 3,
+    PROC_TASKS      = 4,
+    PROC_RTC        = 5,
+    PROC_CPUINFO    = 6,
+    PROC_INTERRUPTS = 7,
 };
 
 struct proc_entry {
@@ -21,7 +25,7 @@ struct proc_entry {
     struct vfs_node *node;
 };
 
-static struct proc_entry g_procs[5];
+static struct proc_entry g_procs[7];
 static struct vfs_node  *g_proc_root = NULL;
 
 static const char *task_state_str(enum task_state st) {
@@ -35,11 +39,55 @@ static const char *task_state_str(enum task_state st) {
     }
 }
 
+static size_t format_cpuinfo(char *buf, size_t cap) {
+    uint32_t eax = 0, ebx = 0, ecx = 0, edx = 0;
+    char vendor[13];
+    memset(vendor, 0, sizeof(vendor));
+    cpuid_leaf(0, 0, &eax, &ebx, &ecx, &edx);
+    memcpy(vendor + 0, &ebx, 4);
+    memcpy(vendor + 4, &edx, 4);
+    memcpy(vendor + 8, &ecx, 4);
+
+    uint32_t fam_info = 0;
+    cpuid_leaf(1, 0, &fam_info, &ebx, &ecx, &edx);
+    uint32_t stepping = fam_info & 0xFU;
+    uint32_t model    = (fam_info >> 4) & 0xFU;
+    uint32_t family   = (fam_info >> 8) & 0xFU;
+    if (family == 6 || family == 15) {
+        model |= ((fam_info >> 16) & 0xFU) << 4;
+    }
+
+    char brand[49];
+    memset(brand, 0, sizeof(brand));
+    uint32_t max_ext = 0;
+    cpuid_leaf(0x80000000U, 0, &max_ext, NULL, NULL, NULL);
+    if (max_ext >= 0x80000004U) {
+        uint32_t *bp = (uint32_t *)brand;
+        cpuid_leaf(0x80000002U, 0, &bp[0], &bp[1], &bp[2], &bp[3]);
+        cpuid_leaf(0x80000003U, 0, &bp[4], &bp[5], &bp[6], &bp[7]);
+        cpuid_leaf(0x80000004U, 0, &bp[8], &bp[9], &bp[10], &bp[11]);
+    } else {
+        strcpy(brand, "QEMU Virtual x86_64 Processor");
+    }
+
+    return (size_t)snprintf(buf, cap,
+        "processor       : 0\n"
+        "vendor_id       : %s\n"
+        "cpu family      : %u\n"
+        "model           : %u\n"
+        "model name      : %s\n"
+        "stepping        : %u\n"
+        "flags           : fpu pse tsc msr pae apic cmov pat mmx fxsr sse sse2 syscall nx lm wp smep\n"
+        "address sizes   : 40 bits physical, 48 bits virtual\n",
+        vendor[0] ? vendor : "GenuineIntel",
+        family, model, brand, stepping);
+}
+
 static size_t format_proc_content(enum proc_kind kind, char *buf, size_t cap) {
     switch (kind) {
         case PROC_VERSION:
             return (size_t)snprintf(buf, cap,
-                "OwnKrn 0.2.0-x86_64 (freestanding C11 + NASM, higher-half)\n");
+                "OwnKrn 0.3.0-x86_64 (freestanding C11 + NASM, higher-half VBE LFB)\n");
         case PROC_MEMINFO: {
             struct pmm_stats ps;
             struct kheap_stats hs;
@@ -92,6 +140,21 @@ static size_t format_proc_content(enum proc_kind kind, char *buf, size_t cap) {
                 rt.year, rt.month, rt.day, rt.hour, rt.minute, rt.second,
                 (long long)epoch);
         }
+        case PROC_CPUINFO:
+            return format_cpuinfo(buf, cap);
+        case PROC_INTERRUPTS:
+            return (size_t)snprintf(buf, cap,
+                "VEC   SOURCE          COUNT       DESCRIPTION\n"
+                "32    IRQ0 (PIC1)     %-11llu PIT 100 Hz System Timer\n"
+                "33    IRQ1 (PIC1)     %-11llu PS/2 Keyboard Controller\n"
+                "36    IRQ4 (PIC1)     %-11llu COM1 16550A Serial UART\n"
+                "14    EXC14 (IDT)     %-11llu CPU Page Faults (#PF)\n"
+                "MSR   SYSCALL (LSTAR) %-11llu Ring 3 System Call Dispatches\n",
+                (unsigned long long)idt_get_irq_count(0),
+                (unsigned long long)idt_get_irq_count(1),
+                (unsigned long long)idt_get_irq_count(4),
+                (unsigned long long)idt_get_pf_count(),
+                (unsigned long long)idt_get_syscall_count());
         default:
             return 0;
     }
@@ -176,11 +239,13 @@ struct vfs_node *procfs_create_root(void) {
     g_proc_root->ops      = &proc_dir_ops;
     g_proc_root->parent   = g_proc_root;
 
-    g_procs[0] = (struct proc_entry){ "version", make_proc(2001, PROC_VERSION, g_proc_root) };
-    g_procs[1] = (struct proc_entry){ "meminfo", make_proc(2002, PROC_MEMINFO, g_proc_root) };
-    g_procs[2] = (struct proc_entry){ "uptime",  make_proc(2003, PROC_UPTIME,  g_proc_root) };
-    g_procs[3] = (struct proc_entry){ "tasks",   make_proc(2004, PROC_TASKS,   g_proc_root) };
-    g_procs[4] = (struct proc_entry){ "rtc",     make_proc(2005, PROC_RTC,     g_proc_root) };
+    g_procs[0] = (struct proc_entry){ "version",    make_proc(2001, PROC_VERSION,    g_proc_root) };
+    g_procs[1] = (struct proc_entry){ "meminfo",    make_proc(2002, PROC_MEMINFO,    g_proc_root) };
+    g_procs[2] = (struct proc_entry){ "uptime",     make_proc(2003, PROC_UPTIME,     g_proc_root) };
+    g_procs[3] = (struct proc_entry){ "tasks",      make_proc(2004, PROC_TASKS,      g_proc_root) };
+    g_procs[4] = (struct proc_entry){ "rtc",        make_proc(2005, PROC_RTC,        g_proc_root) };
+    g_procs[5] = (struct proc_entry){ "cpuinfo",    make_proc(2006, PROC_CPUINFO,    g_proc_root) };
+    g_procs[6] = (struct proc_entry){ "interrupts", make_proc(2007, PROC_INTERRUPTS, g_proc_root) };
 
     return g_proc_root;
 }

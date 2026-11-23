@@ -8,5 +8,6 @@ void console_clear(void);
 void console_putc(char c);
 void console_puts(const char *s);
 void console_set_color(uint8_t fg, uint8_t bg);
+void console_tick_hud(uint64_t ticks);
 
 #endif /* OWNKRN_DRIVERS_CONSOLE_H */

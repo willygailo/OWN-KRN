@@ -187,6 +187,38 @@ static int tmpfs_create(struct vfs_node *dir, const char *name, enum vfs_type ty
     return 0;
 }
 
+static int tmpfs_link(struct vfs_node *dir, const char *name, struct vfs_node *target) {
+    if (!dir || !target || dir->ops != &tmpfs_ops || target->ops != &tmpfs_ops) {
+        return -EXDEV;
+    }
+    uint64_t irq = spin_lock_irqsave(&g_tmpfs_lock);
+    struct tmpfs_data *d = (struct tmpfs_data *)dir->priv;
+    for (struct tmpfs_child *c = d->children; c != NULL; c = c->next) {
+        if (strcmp(c->name, name) == 0) {
+            spin_unlock_irqrestore(&g_tmpfs_lock, irq);
+            return -EEXIST;
+        }
+    }
+
+    struct tmpfs_child *entry = kzalloc(sizeof(*entry));
+    if (!entry) {
+        spin_unlock_irqrestore(&g_tmpfs_lock, irq);
+        return -ENOMEM;
+    }
+    strncpy(entry->name, name, VFS_NAME_MAX - 1);
+    entry->name[VFS_NAME_MAX - 1] = '\0';
+    entry->node = target;
+    entry->next = d->children;
+    d->children = entry;
+
+    target->parent = dir;
+    target->unlinked = false;
+    spin_unlock_irqrestore(&g_tmpfs_lock, irq);
+
+    vfs_node_ref(target);
+    return 0;
+}
+
 static int tmpfs_unlink(struct vfs_node *dir, const char *name) {
     uint64_t irq = spin_lock_irqsave(&g_tmpfs_lock);
     struct tmpfs_data *d = (struct tmpfs_data *)dir->priv;
@@ -226,6 +258,7 @@ static const struct vfs_ops tmpfs_ops = {
     .lookup   = tmpfs_lookup,
     .readdir  = tmpfs_readdir,
     .create   = tmpfs_create,
+    .link     = tmpfs_link,
     .unlink   = tmpfs_unlink,
     .truncate = tmpfs_truncate,
     .release  = tmpfs_release,

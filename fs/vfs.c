@@ -235,6 +235,34 @@ int vfs_unlink(const char *cwd, const char *path) {
     return parent->ops->unlink(parent, leaf);
 }
 
+int vfs_rename(const char *cwd, const char *oldpath, const char *newpath) {
+    struct vfs_node *src_node = NULL;
+    int rc = vfs_resolve(cwd, oldpath, &src_node);
+    if (rc < 0) return rc;
+    if (src_node == g_root || src_node->mount_root) return -EBUSY;
+
+    struct vfs_node *dst_existing = NULL;
+    if (vfs_resolve(cwd, newpath, &dst_existing) == 0) {
+        if (dst_existing == src_node) {
+            return 0;
+        }
+        rc = vfs_unlink(cwd, newpath);
+        if (rc < 0) return rc;
+    }
+
+    struct vfs_node *new_parent = NULL;
+    char new_leaf[VFS_NAME_MAX];
+    rc = vfs_resolve_parent(cwd, newpath, &new_parent, new_leaf);
+    if (rc < 0) return rc;
+    if (!new_parent->ops || !new_parent->ops->link) return -EXDEV;
+
+    rc = new_parent->ops->link(new_parent, new_leaf, src_node);
+    if (rc < 0) return rc;
+
+    rc = vfs_unlink(cwd, oldpath);
+    return rc;
+}
+
 int vfs_stat_node(struct vfs_node *node, struct vfs_stat *st) {
     if (!node || !st) return -EINVAL;
     st->ino  = node->ino;
@@ -408,7 +436,7 @@ ssize_t vfs_read(struct task *t, int fd, void *buf, size_t len) {
     if (!f->node->ops || !f->node->ops->read) return -EINVAL;
 
     ssize_t n = f->node->ops->read(f->node, buf, len, f->offset);
-    if (n > 0 && f->node->type == VFS_FILE) {
+    if (n > 0 && (f->node->type == VFS_FILE || f->node->type == VFS_CHARDEV)) {
         f->offset += (size_t)n;
     }
     return n;

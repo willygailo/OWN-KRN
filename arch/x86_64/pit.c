@@ -1,6 +1,7 @@
 #include <arch/idt.h>
 #include <arch/io.h>
 #include <arch/pit.h>
+#include <drivers/console.h>
 #include <stddef.h>
 
 #define PIT_BASE_FREQ 1193182U
@@ -14,6 +15,9 @@ static pit_tick_hook_t   g_tick_hook = NULL;
 static void pit_irq_handler(struct interrupt_frame *frame) {
     (void)frame;
     g_ticks++;
+    if ((g_ticks % 100ULL) == 0) {
+        console_tick_hud(g_ticks);
+    }
     if (g_tick_hook) {
         g_tick_hook();
     }

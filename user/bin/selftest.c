@@ -114,6 +114,22 @@ int main(int argc, char **argv) {
     check(u_tty_get_mode() == (TTY_MODE_RAW | TTY_MODE_NONBLOCK), "ioctl TIOCGETM matches");
     check(u_tty_set_mode(orig_mode) == 0, "ioctl TIOCSETM restore");
 
+    /* 8. /dev/urandom entropy + SYS_rename */
+    int rfd = u_open("/dev/urandom", UAPI_O_RDONLY, 0);
+    check(rfd >= 0, "open /dev/urandom");
+    uint64_t r1 = 0, r2 = 0;
+    check(u_read(rfd, &r1, sizeof(r1)) == (ssize_t)sizeof(r1), "read /dev/urandom 1");
+    check(u_read(rfd, &r2, sizeof(r2)) == (ssize_t)sizeof(r2), "read /dev/urandom 2");
+    check(r1 != 0 && r2 != 0 && r1 != r2, "/dev/urandom produces distinct non-zero entropy");
+    u_close(rfd);
+
+    int rn_fd = u_open("/tmp/ren_src.txt", UAPI_O_CREAT | UAPI_O_WRONLY | UAPI_O_TRUNC, 0644);
+    check(rn_fd >= 0 && u_write(rn_fd, "rename-ok", 9) == 9, "create /tmp/ren_src.txt");
+    u_close(rn_fd);
+    check(u_rename("/tmp/ren_src.txt", "/tmp/ren_dst.txt") == 0, "SYS_rename");
+    check(u_stat("/tmp/ren_src.txt", &st) < 0 && u_stat("/tmp/ren_dst.txt", &st) == 0, "renamed file stat");
+    check(u_unlink("/tmp/ren_dst.txt") == 0, "cleanup renamed file");
+
     struct utsname u;
     check(u_uname(&u) == 0, "uname syscall");
     printf("[USER] uname: %s %s %s (epoch=%lld)\n",

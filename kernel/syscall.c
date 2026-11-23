@@ -444,6 +444,16 @@ static int64_t sys_unlink(uint64_t upath) {
     return vfs_unlink(sched_current()->cwd, path);
 }
 
+static int64_t sys_rename(uint64_t uold, uint64_t unew) {
+    char oldpath[VFS_PATH_MAX];
+    char newpath[VFS_PATH_MAX];
+    int rc = copy_str_from_user(oldpath, uold, sizeof(oldpath));
+    if (rc < 0) return rc;
+    rc = copy_str_from_user(newpath, unew, sizeof(newpath));
+    if (rc < 0) return rc;
+    return vfs_rename(sched_current()->cwd, oldpath, newpath);
+}
+
 static int64_t sys_nanosleep(uint64_t utsp) {
     struct timespec ts;
     int rc = copy_from_user(&ts, utsp, sizeof(ts));
@@ -491,6 +501,7 @@ static int64_t sys_ioctl(int fd, uint64_t req, uint64_t arg) {
 }
 
 int64_t syscall_dispatch(struct interrupt_frame *f) {
+    idt_inc_syscall_count();
     uint64_t nr = f->rax;
     uint64_t a1 = f->rdi;
     uint64_t a2 = f->rsi;
@@ -523,6 +534,7 @@ int64_t syscall_dispatch(struct interrupt_frame *f) {
         case SYS_getdents:      ret = sys_getdents((int)a1, a2, (size_t)a3); break;
         case SYS_getcwd:        ret = sys_getcwd(a1, (size_t)a2); break;
         case SYS_chdir:         ret = sys_chdir(a1); break;
+        case SYS_rename:        ret = sys_rename(a1, a2); break;
         case SYS_mkdir:         ret = sys_mkdir(a1, (uint32_t)a2); break;
         case SYS_unlink:        ret = sys_unlink(a1); break;
         case SYS_clock_gettime: ret = sys_clock_gettime((int)a1, a2); break;
