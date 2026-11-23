@@ -9,6 +9,11 @@ initrd_root/
 dist/
 out/
 
+# Linux-style Kconfig & auto-generated headers
+.config
+.config.old
+include/generated/
+
 # Compiled objects, dependency files, libraries & linker outputs
 *.o
 *.obj
@@ -46,10 +51,12 @@ initrd*.tar
 *.cpio
 *.cpio.gz
 
-# QEMU, GDB & crash/debug artifacts
+# QEMU, GDB, Clipboard Bridge sockets & crash/debug artifacts
 qemu.log
 gdb.txt
 *.log
+*.sock
+*.pid
 *.pcap
 *.pcapng
 .gdb_history
