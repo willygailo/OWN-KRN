@@ -115,7 +115,7 @@ def main() -> None:
         print(f"  [PASS] {label}")
 
     try:
-        print(f"Booting OwnKrn 0.3.0 in QEMU headless (+nx,+smep,ATA0) on {sys.platform}...")
+        print(f"Booting OwnKrn 0.4.0 in QEMU headless (+nx,+smep,ATA0) on {sys.platform}...")
         boot_out = read_until(b"ownkrn:/# ", timeout=15.0, start_pos=0)
         expect(boot_out, "Long Mode active in higher half", "Higher-half 64-bit boot")
         expect(boot_out, "NXE=on, WP=on, SMEP=on", "CPU hardening (NXE + WP + SMEP)")
@@ -125,10 +125,10 @@ def main() -> None:
         expect(boot_out, "/disk=diskfs", "Persistent DiskFS mounted at /disk")
         expect(boot_out, "SYSCALL/SYSRET MSRs configured", "SYSCALL/SYSRET MSR setup")
         expect(boot_out, "OWN KRN", "/bin/init launched /bin/fetch dashboard on boot")
-        expect(boot_out, "Welcome to OwnKrn 0.3.0", "/bin/init displayed /etc/motd")
+        expect(boot_out, "Welcome to OwnKrn 0.4.0", "/bin/init displayed /etc/motd")
 
         out = send_cmd("uname -a")
-        expect(out, "OwnKrn ownkrn 0.3.0", "uname -a syscall")
+        expect(out, "OwnKrn ownkrn 0.4.0", "uname -a syscall")
         expect(out, "x86_64", "uname machine architecture")
 
         out = send_cmd("neofetch")

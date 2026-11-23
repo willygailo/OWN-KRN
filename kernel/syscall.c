@@ -202,7 +202,7 @@ static int64_t sys_brk(uint64_t new_brk) {
         return (int64_t)cur->user_brk_curr;
     }
     if (new_brk < cur->user_brk_start ||
-        new_brk >= USER_STACK_TOP - USER_STACK_PAGES * PAGE_SIZE - PAGE_SIZE) {
+        new_brk >= 0x0000400000000000ULL) {
         return (int64_t)cur->user_brk_curr;
     }
 
@@ -381,7 +381,7 @@ static int64_t sys_uname(uint64_t ubuf) {
     memset(&u, 0, sizeof(u));
     strcpy(u.sysname,  "OwnKrn");
     strcpy(u.nodename, "ownkrn");
-    strcpy(u.release,  "0.3.0");
+    strcpy(u.release,  "0.4.0");
     strcpy(u.version,  "#1 SMP PREEMPT x86_64");
     strcpy(u.machine,  "x86_64");
     return copy_to_user(ubuf, &u, sizeof(u));
@@ -619,8 +619,16 @@ int64_t syscall_dispatch(struct interrupt_frame *f) {
         case SYS_geteuid:       ret = (int64_t)sched_current()->uid; break;
         case SYS_getgid:
         case SYS_getegid:       ret = (int64_t)sched_current()->gid; break;
-        case SYS_setuid:        sched_current()->uid = (uint32_t)a1; ret = 0; break;
-        case SYS_setgid:        sched_current()->gid = (uint32_t)a1; ret = 0; break;
+        case SYS_setuid:
+            if (a1 > 65535ULL) { ret = -EINVAL; break; }
+            sched_current()->uid = (uint32_t)a1;
+            ret = 0;
+            break;
+        case SYS_setgid:
+            if (a1 > 65535ULL) { ret = -EINVAL; break; }
+            sched_current()->gid = (uint32_t)a1;
+            ret = 0;
+            break;
         case SYS_clock_gettime: ret = sys_clock_gettime((int)a1, a2); break;
         case SYS_reboot:
             if (a1 == OWNKRN_CMD_REBOOT) {

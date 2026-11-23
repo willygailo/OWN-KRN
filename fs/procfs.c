@@ -97,7 +97,7 @@ static size_t format_proc_content(enum proc_kind kind, char *buf, size_t cap) {
     switch (kind) {
         case PROC_VERSION:
             return (size_t)snprintf(buf, cap,
-                "Linux-compatible OwnKrn version 0.3.0-x86_64 (root@ownkrn) (gcc C11 + NASM) #1 SMP PREEMPT\n");
+                "Linux-compatible OwnKrn version 0.4.0-x86_64 (root@ownkrn) (gcc C11 + NASM) #1 SMP PREEMPT\n");
         case PROC_MEMINFO: {
             struct pmm_stats ps;
             struct kheap_stats hs;

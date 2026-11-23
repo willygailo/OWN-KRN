@@ -53,15 +53,17 @@ Uses Linux x86_64 calling convention (`RAX` = number; `RDI, RSI, RDX, R10, R8, R
 | 4 | `stat` | Stat file by path |
 | 5 | `fstat` | Stat open file descriptor |
 | 8 | `lseek` | Reposition file offset |
+| 9 | `mmap` | Map anonymous 4 KiB user virtual memory pages (`0x0000400000000000+` arena) |
+| 11 | `munmap` | Unmap user virtual memory pages and release physical frames |
 | 12 | `brk` | Grow/shrink user heap |
-| 16 | `ioctl` | Get/set TTY mode (`OWNKRN_TIOCGETM`/`TIOCSETM`: `TTY_MODE_CANON`, `TTY_MODE_RAW`, `TTY_MODE_NONBLOCK`) |
+| 16 | `ioctl` | Get/set TTY mode (`OWNKRN_TIOCGETM`/`TIOCSETM`) or clear kernel ring buffer (`OWNKRN_TIOCCLRKMSG`) |
 | 22 | `pipe` | Create unidirectional kernel ring-buffer pipe (`pipefd[2]`) |
 | 24 | `sched_yield` | Voluntarily yield CPU |
 | 32 | `dup` | Duplicate file descriptor to lowest free slot |
 | 33 | `dup2` | Duplicate file descriptor onto specific slot |
 | 35 | `nanosleep` | Sleep for `struct timespec` |
 | 39 | `getpid` | Get current process ID |
-| 57 | `fork` | Clone process address space, FDs, and register frame |
+| 57 | `fork` | Clone process address space, FDs, credentials, and register frame |
 | 59 | `execve` | Replace address space with static ELF64 binary + `argv` |
 | 60 | `exit` | Terminate process with exit status (auto-restores canonical TTY mode) |
 | 61 | `wait4` | Wait for and reap zombie child process (`WNOHANG` supported) |
@@ -73,6 +75,13 @@ Uses Linux x86_64 calling convention (`RAX` = number; `RDI, RSI, RDX, R10, R8, R
 | 82 | `rename` | Atomically move/rename file or directory entry across `tmpfs` |
 | 83 | `mkdir` | Create directory |
 | 87 | `unlink` | Remove directory entry (refcounted inode cleanup) |
+| 90 | `chmod` | Modify VFS inode permission mode bits |
+| 102 | `getuid` | Get real user ID |
+| 104 | `getgid` | Get real group ID |
+| 105 | `setuid` | Set user ID (`0..65535`) |
+| 106 | `setgid` | Set group ID (`0..65535`) |
+| 107 | `geteuid` | Get effective user ID |
+| 108 | `getegid` | Get effective group ID |
 | 110 | `getppid` | Get parent process ID |
 | 169 | `reboot` | ACPI poweroff or 8042 CPU reset |
 | 228 | `clock_gettime` | Query `CLOCK_REALTIME` (CMOS RTC) or `CLOCK_MONOTONIC` (PIT) |

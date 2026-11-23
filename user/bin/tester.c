@@ -432,7 +432,7 @@ static bool save_persistent_report(void) {
     int pos = 0;
     pos += snprintf(buf + pos, sizeof(buf) - (size_t)pos,
         "====================================================================\n"
-        "  OwnKrn v0.3.0 Automated Diagnostics, Security & Benchmark Report\n"
+        "  OwnKrn v0.4.0 Automated Diagnostics, Security & Benchmark Report\n"
         "  Timestamp : %s\n"
         "====================================================================\n",
         rtc);
@@ -555,7 +555,7 @@ static void render_tui(void) {
     bar[32] = '\0';
 
     printf("\x1b[H");
-    printf("\x1b[7m OwnKrn v0.3.0 Interactive System Diagnostics, Security Audit & Benchmark Testbench (/bin/tester)       \x1b[0m\x1b[K\n");
+    printf("\x1b[7m OwnKrn v0.4.0 Interactive System Diagnostics, Security Audit & Benchmark Testbench (/bin/tester)       \x1b[0m\x1b[K\n");
     printf(" \x1b[1;36mProgress:\x1b[0m [\x1b[1;32m%s\x1b[0m] \x1b[1;33m%3d%%\x1b[0m (%d/%d checks | %d/%d suites passed) | Report: \x1b[1;32m/disk/test_report.txt\x1b[0m\x1b[K\n",
            bar, pct, done_checks, total_checks, suites_passed, NUM_SUITES);
     printf(" ------------------------------------------------------------------------------------------------------------------\x1b[K\n");
@@ -595,7 +595,7 @@ static void render_tui(void) {
 
 static int run_batch_mode(void) {
     printf("\n====================================================================\n");
-    printf("  OwnKrn v0.3.0 Diagnostic, Security & Benchmark Testbench (Batch)\n");
+    printf("  OwnKrn v0.4.0 Diagnostic, Security & Benchmark Testbench (Batch)\n");
     printf("====================================================================\n");
 
     int passed = 0;
@@ -625,7 +625,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    add_log("OwnKrn v0.3.0 Testbench initialized (PID=%d).", u_getpid());
+    add_log("OwnKrn v0.4.0 Testbench initialized (PID=%d).", u_getpid());
     add_log("Press 'a' to execute all 6 diagnostic & benchmark suites.");
 
     u_tty_set_mode(TTY_MODE_RAW);

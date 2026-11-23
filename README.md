@@ -4,7 +4,7 @@
 
 <br />
 
-# ⚡ OwnKrn `0.3.0-x86_64`
+# ⚡ OwnKrn `0.4.0-x86_64`
 
 **A freestanding, higher-half, Linux-inspired 64-bit operating system kernel built completely from scratch in C11 & x86_64 NASM Assembly.**
 
@@ -290,6 +290,7 @@ OWN KRN/
 - [x] **Phase 7** — Freestanding `user/libc`, PID 1 `/bin/init`, interactive `/bin/sh`, automated QEMU E2E tests & documentation
 - [x] **v0.2.0 Hardening & Unix IPC** — Refcounted VFS/tmpfs, `CR4.SMEP`, CMOS RTC (`date`), `pipe`/`dup`/`dup2` + shell pipelines (`|`, `<`, `>`, `>>`), POSIX `kill`/`SIGINT`, Ring 3 fault containment, `grep`/`wc`/`hexdump`/`sleep` & GitHub Actions CI (32/32 tests passing)
 - [x] **v0.3.0 Widescreen VBE GUI, Persistent `/disk`, TUI Suite & Cross-Platform Support** — Bochs VBE `1024×576×32` linear framebuffer (`128×36` grid + live 1 Hz Top HUD Bar & Bottom Dock), ATA0 28-bit LBA persistent `/disk` (`diskfs`), PIT Ch2 PC Speaker (`beep`), raw/non-blocking `SYS_ioctl` TTY, `SYS_rename` (`mv`/`cp`), shell line editing (arrow history + tab completion + scripts), `fetch`/`top`/`fm`/`edit`/`snake`/`calc`/`cal`, `/dev/urandom`, `/proc/cpuinfo`/`interrupts`/`mounts`, and Linux/macOS/Windows/Docker support (54/54 tests passing)
+- [x] **v0.4.0 `torvalds/linux`-Style Kconfig, `dmesg`, PCI Bus, `mmap`, Multi-User `UID`/`GID`, Bash Jobs & `/bin/tester`** — `Kconfig`/`.config` + `make defconfig` & interactive `make menuconfig` + `/proc/config`, 16 KiB `[    0.000000]` `dmesg` ring buffer (`/proc/kmsg`), PCI Bus hardware enumeration (`lspci`, `/proc/pci`) & block partition table (`lsblk`, `/proc/partitions`), `SYS_mmap`/`SYS_munmap`, multi-user `UID`/`GID` credentials (`id`, `su root/guest`, `chmod`) + Linux FHS (`/etc/os-release`, `/etc/passwd`), `$VAR`/`$?` expansion + `;`/`&&` chaining + background jobs (`&`, `jobs`, `fg`), `find`/`sort`/`uniq`/`which`, and 6-suite interactive `/bin/tester` testbench saving reports to `/disk/test_report.txt` (68/68 tests passing)
 
 ---
 

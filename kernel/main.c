@@ -50,7 +50,7 @@ void kmain(uint64_t boot_magic, uint64_t boot_info_phys) {
 
     printk("\n");
     printk("====================================================\n");
-    printk("  OwnKrn 0.3.0-x86_64 (Linux-Inspired OS Kernel)\n");
+    printk("  OwnKrn 0.4.0-x86_64 (Linux-Inspired OS Kernel)\n");
     printk("====================================================\n");
 
     uint64_t rip = current_rip();

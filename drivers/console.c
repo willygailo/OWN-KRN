@@ -217,7 +217,7 @@ static void fb_draw_top_hud(void) {
              (unsigned long long)tot_mb,
              rt.hour, rt.minute, rt.second);
 
-    fb_draw_bar_str(0, 0,  " OWNKRN 0.3.0-x86_64 ", 0x00FFFFFF, pill_bg);
+    fb_draw_bar_str(0, 0,  " OWNKRN 0.4.0-x86_64 ", 0x00FFFFFF, pill_bg);
     fb_draw_bar_str(0, 22, "CPU: Long Mode (NX+WP+SMEP)", cyan_fg, bar_bg);
     fb_draw_bar_str(0, 50, telemetry, yell_fg, bar_bg);
     fb_draw_bar_str(0, 115, " RING 0/3 OK ", 0x00FFFFFF, ok_bg);
