@@ -24,7 +24,7 @@ struct dev_entry {
     struct vfs_node *node;
 };
 
-#define CLIPBOARD_MAX 16384
+#define CLIPBOARD_MAX SERIAL_CLIP_MAX
 static char             g_clip_buf[CLIPBOARD_MAX];
 static size_t           g_clip_len = 0;
 static struct dev_entry g_devs[7];
@@ -69,11 +69,9 @@ static ssize_t dev_read(struct vfs_node *node, void *buf, size_t len, size_t off
             return (ssize_t)len;
         }
         case DEV_CLIPBOARD: {
-            static char snap[CLIPBOARD_MAX];
             if (offset == 0) {
-                g_clip_len = serial_clipboard_read(snap, sizeof(snap) - 1);
-                snap[g_clip_len] = '\0';
-                memcpy(g_clip_buf, snap, g_clip_len + 1);
+                g_clip_len = serial_clipboard_read(g_clip_buf, sizeof(g_clip_buf) - 1);
+                g_clip_buf[g_clip_len] = '\0';
             }
             if (offset >= g_clip_len) {
                 return 0;

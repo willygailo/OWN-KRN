@@ -129,6 +129,9 @@ static bool parse_multiboot2(uint64_t info_phys, struct boot_info *out) {
 }
 
 static bool parse_pvh(uint64_t info_phys, struct boot_info *out) {
+    if (info_phys == 0 || info_phys >= 0x100000000ULL) {
+        return false;
+    }
     const struct hvm_start_info *si =
         (const struct hvm_start_info *)PHYS_TO_VIRT(info_phys);
     if (si->magic != BOOT_PVH_MAGIC) {
@@ -139,23 +142,28 @@ static bool parse_pvh(uint64_t info_phys, struct boot_info *out) {
     out->raw_info_phys = info_phys;
     out->raw_info_size = sizeof(struct hvm_start_info);
 
-    if (si->cmdline_paddr) {
+    if (si->cmdline_paddr && si->cmdline_paddr < 0x100000000ULL) {
         const char *cmd = (const char *)PHYS_TO_VIRT(si->cmdline_paddr);
         strncpy(out->cmdline, cmd, sizeof(out->cmdline) - 1);
         out->cmdline[sizeof(out->cmdline) - 1] = '\0';
     }
 
-    if (si->nr_modules > 0 && si->modlist_paddr) {
+    if (si->nr_modules > 0 && si->modlist_paddr && si->modlist_paddr < 0x100000000ULL) {
         const struct hvm_modlist_entry *mods =
             (const struct hvm_modlist_entry *)PHYS_TO_VIRT(si->modlist_paddr);
         out->initrd_phys = mods[0].paddr;
         out->initrd_size = mods[0].size;
     }
 
-    if (si->version >= 1 && si->memmap_paddr && si->memmap_entries > 0) {
+    if (si->version >= 1 && si->memmap_paddr && si->memmap_paddr < 0x100000000ULL &&
+        si->memmap_entries > 0) {
         const struct hvm_memmap_entry *ents =
             (const struct hvm_memmap_entry *)PHYS_TO_VIRT(si->memmap_paddr);
-        for (uint32_t i = 0; i < si->memmap_entries; i++) {
+        uint32_t count = si->memmap_entries;
+        if (count > BOOT_MMAP_MAX) {
+            count = BOOT_MMAP_MAX;
+        }
+        for (uint32_t i = 0; i < count; i++) {
             record_mmap(out, ents[i].addr, ents[i].size, ents[i].type);
         }
     }

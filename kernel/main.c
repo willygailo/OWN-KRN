@@ -48,6 +48,11 @@ void kmain(uint64_t boot_magic, uint64_t boot_info_phys) {
     serial_init();
     console_init();
 
+    /* Establish 64-bit GDT/TSS and 256-vector IDT (+IST1 #DF) immediately so any
+     * early CPU exception produces a full register dump instead of a triple fault. */
+    gdt_init();
+    idt_init();
+
     printk("\n");
     printk("====================================================\n");
     printk("  OwnKrn 0.4.0-x86_64 (Linux-Inspired OS Kernel)\n");
@@ -60,8 +65,9 @@ void kmain(uint64_t boot_magic, uint64_t boot_info_phys) {
     enable_cpu_security_features();
 
     if (!bootinfo_parse(boot_magic, boot_info_phys, &g_boot_info)) {
-        kpanic("Failed to parse boot info (magic=0x%llx)",
-               (unsigned long long)boot_magic);
+        kpanic("Failed to parse boot info (magic=0x%llx, info_phys=0x%llx)",
+               (unsigned long long)boot_magic,
+               (unsigned long long)boot_info_phys);
     }
     pr_info("Boot protocol : %s (%llu MiB usable RAM)\n",
             g_boot_info.protocol,
@@ -72,9 +78,7 @@ void kmain(uint64_t boot_magic, uint64_t boot_info_phys) {
     pr_info("CMOS RTC      : %04u-%02u-%02u %02u:%02u:%02u UTC\n",
             rt.year, rt.month, rt.day, rt.hour, rt.minute, rt.second);
 
-    /* Core CPU tables, interrupt controller, timer & TTY */
-    gdt_init();
-    idt_init();
+    /* Interrupt controller, timer, keyboard & TTY */
     pic_init();
     pit_init(PIT_HZ);
     keyboard_init();

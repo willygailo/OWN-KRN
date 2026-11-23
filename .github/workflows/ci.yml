@@ -23,7 +23,7 @@ jobs:
       - name: Clean build kernel, userspace ELF64 & initrd
         run: make clean && make
 
-      - name: Run 68-check automated QEMU end-to-end test suite
+      - name: Run 79-check automated QEMU end-to-end test suite
         run: make test
 
       - name: Build & smoke-test GRUB2 Multiboot2 ISO
@@ -75,7 +75,7 @@ jobs:
       - name: Verify toolchain
         run: make check-tools
 
-      - name: Build & run 68-check QEMU test suite on macOS
+      - name: Build & run 79-check QEMU test suite on macOS
         run: make clean && make && make test
 
   windows-build-and-test:
@@ -104,5 +104,5 @@ jobs:
       - name: Verify toolchain on Windows
         run: make check-tools
 
-      - name: Build & run 68-check QEMU test suite on Windows
+      - name: Build & run 79-check QEMU test suite on Windows
         run: make clean && make && make test

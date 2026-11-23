@@ -11,6 +11,7 @@ static size_t   g_clip_len = 0;
 static char     g_com2_rx_buf[SERIAL_CLIP_MAX];
 static size_t   g_com2_rx_len = 0;
 static bool     g_com2_in_stx = false;
+static bool     g_serial_poll_ready = false;
 static volatile uint32_t g_com2_sync_seq = 0;
 
 static void uart_init_port(uint16_t port) {
@@ -99,6 +100,7 @@ void serial_enable_rx_irq(void) {
         outb(COM2_PORT + 1, 0x01); /* Enable COM2 RX interrupt (IRQ 3) */
         irq_register_handler(3, com2_rx_irq);
     }
+    g_serial_poll_ready = true;
 }
 
 static bool serial_tx_ready(void) {
@@ -108,20 +110,26 @@ static bool serial_tx_ready(void) {
 void serial_putc(char c) {
     if (c == '\n') {
         while (!serial_tx_ready()) {
-            keyboard_poll_serial();
-            serial_com2_poll();
+            if (g_serial_poll_ready) {
+                keyboard_poll_serial();
+                serial_com2_poll();
+            }
             cpu_pause();
         }
         outb(COM1_PORT, '\r');
     }
     while (!serial_tx_ready()) {
-        keyboard_poll_serial();
-        serial_com2_poll();
+        if (g_serial_poll_ready) {
+            keyboard_poll_serial();
+            serial_com2_poll();
+        }
         cpu_pause();
     }
     outb(COM1_PORT, (uint8_t)c);
-    keyboard_poll_serial();
-    serial_com2_poll();
+    if (g_serial_poll_ready) {
+        keyboard_poll_serial();
+        serial_com2_poll();
+    }
 }
 
 void serial_puts(const char *s) {

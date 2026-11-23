@@ -81,13 +81,17 @@ CFLAGS := \
 	-Iinclude \
 	-fno-builtin \
 	-fno-stack-protector \
+	-fno-stack-clash-protection \
 	-fno-pic \
+	-fno-PIC \
 	-fno-pie \
+	-fno-PIE \
 	-fcf-protection=none \
 	-fno-asynchronous-unwind-tables \
 	-fno-unwind-tables \
 	-fno-omit-frame-pointer \
 	-mno-red-zone \
+	-mno-80387 \
 	-mno-mmx \
 	-mno-sse \
 	-mno-sse2 \
@@ -107,21 +111,25 @@ USER_CFLAGS := \
 	-Iuser/libc/include \
 	-fno-builtin \
 	-fno-stack-protector \
+	-fno-stack-clash-protection \
 	-fno-pic \
+	-fno-PIC \
 	-fno-pie \
+	-fno-PIE \
 	-fcf-protection=none \
 	-fno-asynchronous-unwind-tables \
 	-fno-unwind-tables \
+	-mno-80387 \
 	-mno-mmx \
 	-mno-sse \
 	-mno-sse2 \
 	-Wall -Wextra -Werror \
-	-g -O2 \
+	-O2 \
 	-MMD -MP
 
 ASFLAGS      := -f elf64 -g -F dwarf
-LDFLAGS      := -nostdlib -static -z max-page-size=0x1000 -T linker/kernel.ld
-USER_LDFLAGS := -nostdlib -static -z max-page-size=0x1000 -T user/user.ld
+LDFLAGS      := -nostdlib -static --build-id=none -z max-page-size=0x1000 -T linker/kernel.ld
+USER_LDFLAGS := -nostdlib -static --build-id=none -z max-page-size=0x1000 -T user/user.ld
 
 # Kernel Sources
 ASM_SRCS := \

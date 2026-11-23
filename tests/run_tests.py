@@ -82,17 +82,27 @@ def main() -> None:
         with cond:
             if start_pos < 0:
                 start_pos = len(transcript)
-            deadline = time.monotonic() + timeout
+            start_t = time.monotonic()
+            deadline = start_t + timeout
             while True:
                 if marker in transcript[start_pos:]:
                     return transcript[start_pos:].decode("utf-8", errors="replace")
                 rem = deadline - time.monotonic()
                 if rem <= 0 or (eof_reached and proc.poll() is not None):
                     dump = transcript.decode("utf-8", errors="replace")
+                    rc_now = proc.poll()
+                    elapsed = time.monotonic() - start_t
                     proc.kill()
+                    qlog = ""
+                    if os.path.isfile("build/qemu.log"):
+                        with open("build/qemu.log", "r", encoding="utf-8", errors="replace") as qf:
+                            lines = qf.readlines()
+                            qlog = "".join(lines[-50:])
                     raise AssertionError(
-                        f"Timed out waiting for {marker!r}.\n"
-                        f"--- Serial transcript ---\n{dump}\n-------------------------"
+                        f"Timed out waiting for {marker!r} "
+                        f"(rc={rc_now}, eof={eof_reached}, elapsed={elapsed:.2f}s).\n"
+                        f"--- Serial transcript ---\n{dump}\n-------------------------\n"
+                        f"--- build/qemu.log (tail) ---\n{qlog}\n-----------------------------"
                     )
                 cond.wait(timeout=min(0.1, rem))
 
