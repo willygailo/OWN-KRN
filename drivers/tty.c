@@ -17,6 +17,7 @@ static char       g_ready_buf[TTY_READY_MAX];
 static size_t     g_ready_head = 0;
 static size_t     g_ready_tail = 0;
 static bool       g_eof_pending = false;
+static int        g_rx_esc = 0; /* 0=normal, 1=ESC, 2=CSI */
 static spinlock_t g_tty_lock = SPINLOCK_INIT;
 
 static void tty_echo(char c) {
@@ -34,6 +35,29 @@ static void ready_push_unlocked(char c) {
 
 void tty_rx_char(char c) {
     uint64_t flags = spin_lock_irqsave(&g_tty_lock);
+
+    /* Ignore ANSI terminal escape sequences (arrow keys, Home/End, etc.) */
+    if (g_rx_esc == 1) {
+        if (c == '[' || c == 'O') {
+            g_rx_esc = 2;
+        } else {
+            g_rx_esc = 0;
+        }
+        spin_unlock_irqrestore(&g_tty_lock, flags);
+        return;
+    }
+    if (g_rx_esc == 2) {
+        if ((c >= '@' && c <= '~')) {
+            g_rx_esc = 0;
+        }
+        spin_unlock_irqrestore(&g_tty_lock, flags);
+        return;
+    }
+    if (c == 0x1B) {
+        g_rx_esc = 1;
+        spin_unlock_irqrestore(&g_tty_lock, flags);
+        return;
+    }
 
     if (c == '\r') {
         c = '\n';
@@ -99,6 +123,7 @@ void tty_init(void) {
     g_ready_head = 0;
     g_ready_tail = 0;
     g_eof_pending = false;
+    g_rx_esc = 0;
     keyboard_set_sink(tty_rx_char);
 }
 

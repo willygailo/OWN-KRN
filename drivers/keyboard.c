@@ -77,6 +77,7 @@ static void keyboard_irq(struct interrupt_frame *frame) {
 
 static void serial_rx_irq(struct interrupt_frame *frame) {
     (void)frame;
+    (void)inb(COM1_PORT + 2); /* Acknowledge IIR */
     while (serial_has_data()) {
         int ch = serial_getc_nonblock();
         if (ch < 0) {
@@ -90,13 +91,16 @@ static void serial_rx_irq(struct interrupt_frame *frame) {
 }
 
 void keyboard_init(void) {
-    /* Drain any pending PS/2 byte */
+    /* Drain any pending PS/2 and COM1 bytes */
     while (inb(0x64) & 0x01) {
         (void)inb(KBD_DATA_PORT);
     }
+    while (serial_has_data()) {
+        (void)serial_getc_nonblock();
+    }
+    serial_enable_rx_irq();
     irq_register_handler(1, keyboard_irq);
     irq_register_handler(4, serial_rx_irq);
-    serial_enable_rx_irq();
 }
 
 void keyboard_set_sink(input_sink_t sink) {

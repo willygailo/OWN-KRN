@@ -7,8 +7,14 @@ void serial_init(void) {
     outb(COM1_PORT + 0, 0x01); /* Divisor low byte: 115200 baud */
     outb(COM1_PORT + 1, 0x00); /* Divisor high byte */
     outb(COM1_PORT + 3, 0x03); /* 8 bits, no parity, one stop bit (8N1) */
-    outb(COM1_PORT + 2, 0xC7); /* Enable FIFO, clear them, 14-byte threshold */
+    outb(COM1_PORT + 2, 0x07); /* Enable FIFO, clear RX/TX, 1-byte trigger threshold */
     outb(COM1_PORT + 4, 0x0B); /* IRQs enabled, RTS/DSR set */
+
+    /* Drain any stale RX bytes and clear pending IIR/LSR latches */
+    while (inb(COM1_PORT + 5) & 0x01) {
+        (void)inb(COM1_PORT);
+    }
+    (void)inb(COM1_PORT + 2);
 }
 
 void serial_enable_rx_irq(void) {
